@@ -190,6 +190,7 @@ def analyze_fuel(
             )
    
     return {
+        "timestamp": datetime.utcnow().isoformat(),
 
         "device_id": device_id,
 
@@ -207,7 +208,7 @@ def analyze_fuel(
 
         "model_version": model_version,
 
-        "is_anomaly": is_anomaly,
+        "anomaly": is_anomaly,
 
         "risk_level": risk,
 

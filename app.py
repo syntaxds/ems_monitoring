@@ -9,7 +9,6 @@ from services.anomaly_service import (
 
 from model.isolation_forest import retrain_model
 
-
 app = Flask(__name__)
 
 AI_VERSION = "1.0.0"

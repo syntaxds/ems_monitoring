@@ -11,7 +11,6 @@ MODEL_VERSION = "1.0.0"
 
 
 # TRAINING DATA
-# [fuel_level, voltage]
 train_data = np.array([
     [50, 12.4],
     [52, 12.5],
