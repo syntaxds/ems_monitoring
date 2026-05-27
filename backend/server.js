@@ -36,7 +36,9 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'blob:', 'https://*.tile.openstreetmap.org', 'https://*.basemaps.cartocdn.com'],
+        // 'http:' allows live MJPEG camera streams served from devices' LAN IPs
+        // (e.g. http://192.168.0.x/stream), whose addresses are dynamic.
+        imgSrc: ["'self'", 'data:', 'blob:', 'http:', 'https://*.tile.openstreetmap.org', 'https://*.basemaps.cartocdn.com'],
         connectSrc: ["'self'", 'ws:', 'wss:'],
         fontSrc: ["'self'", 'data:'],
         objectSrc: ["'none'"]

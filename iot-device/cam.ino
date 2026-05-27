@@ -33,8 +33,12 @@
 #include <esp_http_server.h>
 
 // ─── CONFIG - SESUAIKAN ──────────────────────────────────────
-const char* WIFI_SSID     = "@Wifi.id";
-const char* WIFI_PASSWORD = "lemotbgt";
+// WiFi credentials live in secrets.h (gitignored).
+// Copy secrets.example.h -> secrets.h and fill in real values.
+#include "secrets.h"
+
+const char* WIFI_SSID     = SECRET_WIFI_SSID;
+const char* WIFI_PASSWORD = SECRET_WIFI_PASSWORD;
 const char* CAM_HOSTNAME  = "excavator-cam";   // → excavator-cam.local
 // ─────────────────────────────────────────────────────────────
 
