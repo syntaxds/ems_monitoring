@@ -49,11 +49,7 @@ jobs:
           for candidate in ai-engine/app.py ai-engine/main.py ai-engine/server.py; do
             if [ -f "$candidate" ]; then
               echo "Attempting import of $candidate"
-              ( cd ai-engine && python -c "import importlib.util, os, sys; \
-name=os.path.splitext(os.path.basename('$candidate'))[0]; \
-spec=importlib.util.spec_from_file_location(name, os.path.basename('$candidate')); \
-mod=importlib.util.module_from_spec(spec); \
-spec.loader.exec_module(mod); print('Imported', name, 'OK')" ) || echo "::warning::Import check failed for $candidate"
+              ( cd ai-engine && python -c "import importlib.util, os, sys; name=os.path.splitext(os.path.basename('$candidate'))[0]; spec=importlib.util.spec_from_file_location(name, os.path.basename('$candidate')); mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); print('Imported', name, 'OK')" ) || echo "::warning::Import check failed for $candidate"
             fi
           done
           echo "Import check step complete."
