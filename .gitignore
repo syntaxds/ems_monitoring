@@ -1,0 +1,41 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build output
+build/
+dist/
+
+# Uploads
+uploads/
+
+# Certificates and secrets
+certs/
+*.key
+*.crt
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pkl
+*.joblib
+venv/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Local throwaway test tooling (not part of the deliverable)
+_local/

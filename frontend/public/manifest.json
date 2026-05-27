@@ -1,0 +1,9 @@
+{
+  "short_name": "PMJ Fleet",
+  "name": "PMJ Fleet Dashboard - EMS",
+  "icons": [],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#b91c1c",
+  "background_color": "#1a1a1a"
+}

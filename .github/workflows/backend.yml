@@ -1,0 +1,45 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Syntax check all JS files
+        run: |
+          find . -path ./node_modules -prune -o -name '*.js' -print | while read -r f; do
+            node --check "$f"
+          done
+
+      - name: Verify server module loads (no port binding)
+        env:
+          CI: 'true'
+          JWT_SECRET: 'ci-dummy-secret'
+        run: |
+          timeout 30s node -e "require('./server.js'); console.log('server module loaded OK');"

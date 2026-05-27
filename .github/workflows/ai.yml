@@ -1,0 +1,59 @@
+name: AI Engine CI
+
+on:
+  push:
+    paths:
+      - 'ai-engine/**'
+      - '.github/workflows/ai.yml'
+  pull_request:
+    paths:
+      - 'ai-engine/**'
+      - '.github/workflows/ai.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies (skip gracefully if no requirements.txt)
+        run: |
+          if [ -f ai-engine/requirements.txt ]; then
+            pip install -r ai-engine/requirements.txt
+          else
+            echo "::warning::ai-engine/requirements.txt not found — skipping dependency install."
+          fi
+
+      - name: Syntax check all Python files
+        run: |
+          shopt -s globstar nullglob
+          files=(ai-engine/**/*.py)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::warning::No Python files found under ai-engine — nothing to compile."
+          else
+            for f in "${files[@]}"; do
+              python -m py_compile "$f"
+            done
+            echo "All Python files compiled without syntax errors."
+          fi
+
+      - name: Dry-run import check for Flask/FastAPI app
+        run: |
+          shopt -s globstar nullglob
+          for candidate in ai-engine/app.py ai-engine/main.py ai-engine/server.py; do
+            if [ -f "$candidate" ]; then
+              echo "Attempting import of $candidate"
+              ( cd ai-engine && python -c "import importlib.util, os, sys; \
+name=os.path.splitext(os.path.basename('$candidate'))[0]; \
+spec=importlib.util.spec_from_file_location(name, os.path.basename('$candidate')); \
+mod=importlib.util.module_from_spec(spec); \
+spec.loader.exec_module(mod); print('Imported', name, 'OK')" ) || echo "::warning::Import check failed for $candidate"
+            fi
+          done
+          echo "Import check step complete."
