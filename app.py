@@ -1,7 +1,9 @@
+import os
+from dotenv import load_dotenv 
+load_dotenv()
+
 from datetime import datetime
-
 from flask import Flask, request, jsonify
-
 from services.anomaly_service import (
     analyze_fuel,
     get_metrics
@@ -9,9 +11,24 @@ from services.anomaly_service import (
 
 from model.isolation_forest import retrain_model
 
+
 app = Flask(__name__)
 
 AI_VERSION = "1.0.0"
+
+AI_API_KEY = os.getenv("AI_API_KEY", "")
+
+
+def validate_api_key(req):
+
+    # ALLOW LOCAL DEVELOPMENT IF KEY EMPTY
+    if not AI_API_KEY:
+
+        return True
+
+    api_key = req.headers.get("x-api-key")
+
+    return api_key == AI_API_KEY
 
 
 @app.route('/')
@@ -22,6 +39,12 @@ def home():
 
 @app.route('/health')
 def health():
+
+    if not validate_api_key(request):
+
+        return jsonify({
+            "error": "Unauthorized"
+        }), 401
 
     return jsonify({
 
@@ -34,8 +57,11 @@ def health():
         "model_version": AI_VERSION,
 
         "score_mode": {
+
             "0.0": "highest anomaly risk",
+
             "1.0": "fully normal behavior"
+
         }
 
     })
@@ -60,6 +86,12 @@ def anomaly_score_docs():
 @app.route('/metrics')
 def metrics():
 
+    if not validate_api_key(request):
+
+        return jsonify({
+            "error": "Unauthorized"
+        }), 401
+
     result = get_metrics()
 
     result["model_version"] = AI_VERSION
@@ -67,10 +99,16 @@ def metrics():
     return jsonify(result)
 
 
-@app.route('/analyze', methods=['POST'])
+@app.route('/internal/ai/analyze', methods=['POST'])
 def analyze():
 
     try:
+
+        if not validate_api_key(request):
+
+            return jsonify({
+                "error": "Unauthorized"
+            }), 401
 
         req = request.json
 
@@ -143,10 +181,78 @@ def analyze():
         }), 500
 
 
+@app.route('/internal/ai/analyze/batch', methods=['POST'])
+def analyze_batch():
+
+    try:
+
+        if not validate_api_key(request):
+
+            return jsonify({
+                "error": "Unauthorized"
+            }), 401
+
+        req = request.json
+
+        if not req:
+
+            return jsonify({
+                "error": "Request body required"
+            }), 400
+
+        devices = req.get("devices", [])
+
+        results = []
+
+        for device in devices:
+
+            device_id = device.get("device_id")
+
+            fuel_level = float(
+                device.get("fuel_level", 0)
+            )
+
+            voltage = float(
+                device.get("voltage", 12.4)
+            )
+
+            engine_status = device.get(
+                "engine_status",
+                "ON"
+            )
+
+            result = analyze_fuel(
+                device_id,
+                fuel_level,
+                voltage,
+                engine_status
+            )
+
+            results.append(result)
+
+        return jsonify(results)
+
+    except Exception as e:
+
+        return jsonify({
+
+            "error": str(e),
+
+            "timestamp": datetime.utcnow().isoformat()
+
+        }), 500
+
+
 @app.route('/retrain', methods=['POST'])
 def retrain():
 
     try:
+
+        if not validate_api_key(request):
+
+            return jsonify({
+                "error": "Unauthorized"
+            }), 401
 
         req = request.json
 
