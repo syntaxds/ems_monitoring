@@ -20,6 +20,9 @@ certs/
 *.crt
 *.pem
 
+# IoT firmware secrets (real values live here; commit secrets.example.h only)
+iot-device/secrets.h
+
 # Python
 __pycache__/
 *.pyc

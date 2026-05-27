@@ -31,17 +31,21 @@
 #include <time.h>
 
 // ─── CONFIG - SESUAIKAN INI ──────────────────────────────────
-const char* WIFI_SSID     = "@Wifi.id";
-const char* WIFI_PASSWORD = "lemotbgt";
+// Secrets (WiFi + MQTT user/pass + device token) live in secrets.h, which is
+// gitignored. Copy secrets.example.h -> secrets.h and fill in real values.
+#include "secrets.h"
+
+const char* WIFI_SSID     = SECRET_WIFI_SSID;
+const char* WIFI_PASSWORD = SECRET_WIFI_PASSWORD;
 
 const char* MQTT_HOST     = "b056696384c54d209bcc1388636b4415.s1.eu.hivemq.cloud";
 const int   MQTT_PORT     = 8883;
-const char* MQTT_USER     = "esp32_excavator";
-const char* MQTT_PASS     = "Pmjpontianak1";
+const char* MQTT_USER     = SECRET_MQTT_USER;
+const char* MQTT_PASS     = SECRET_MQTT_PASS;
 
 const char* MQTT_TOPIC    = "device/EXCAVATOR_001/telemetry";
 const char* DEVICE_ID     = "EXCAVATOR_001";
-const char* DEVICE_TOKEN  = "tkn_abc123xyz";
+const char* DEVICE_TOKEN  = SECRET_DEVICE_TOKEN;
 // ─────────────────────────────────────────────────────────────
 
 // ─── PIN ASSIGNMENT ──────────────────────────────────────────

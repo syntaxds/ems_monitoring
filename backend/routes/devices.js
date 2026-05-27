@@ -8,6 +8,7 @@ const multer = require('multer');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const wsService = require('../services/wsService');
+const cameraProxy = require('../services/cameraProxy');
 const { validateDevice } = require('../services/deviceAuth');
 
 const router = express.Router();
@@ -130,6 +131,32 @@ router.get('/:id/gps', requireAuth, async (req, res, next) => {
 });
 
 /**
+ * GET /api/devices/:id/camera/stream
+ * Proxies the device's live MJPEG stream through the backend so the dashboard
+ * loads it same-origin and the single-client ESP32-CAM is only ever hit by one
+ * connection (this hub) regardless of how many viewers are watching.
+ * Auth accepts ?token= since an <img> cannot send an Authorization header.
+ */
+router.get('/:id/camera/stream', requireAuth, async (req, res, next) => {
+  try {
+    const result = await db.query(
+      `SELECT image_path
+       FROM camera_data
+       WHERE device_id = $1
+       ORDER BY timestamp DESC
+       LIMIT 1`,
+      [req.params.id]
+    );
+    if (result.rowCount === 0 || !/^https?:\/\//i.test(result.rows[0].image_path)) {
+      return res.status(404).json({ error: 'No live stream for this device' });
+    }
+    return cameraProxy.attach(req.params.id, result.rows[0].image_path, req, res);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
  * GET /api/devices/:id/camera/latest
  */
 router.get('/:id/camera/latest', requireAuth, async (req, res, next) => {
@@ -146,9 +173,12 @@ router.get('/:id/camera/latest', requireAuth, async (req, res, next) => {
       return res.status(404).json({ error: 'No camera image for this device' });
     }
     const row = result.rows[0];
+    // image_path is either an absolute live-stream URL (MQTT path, e.g.
+    // http://<cam-ip>/stream) or a stored snapshot filename (upload path).
+    const isAbsolute = /^https?:\/\//i.test(row.image_path);
     return res.json({
       image_id: row.image_id,
-      image_url: `/media/cameras/${path.basename(row.image_path)}`,
+      image_url: isAbsolute ? row.image_path : `/media/cameras/${path.basename(row.image_path)}`,
       timestamp: row.timestamp
     });
   } catch (err) {

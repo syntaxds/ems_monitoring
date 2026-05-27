@@ -4,10 +4,14 @@ const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
 const api = axios.create({ baseURL });
 
-// Resolve a backend-relative media path (e.g. "/media/cameras/x.jpg") to an
-// absolute URL the browser can load across origins.
+// Resolve a media path the browser can load. Absolute URLs (e.g. a live camera
+// stream "http://<cam-ip>/stream") are returned as-is; backend-relative paths
+// (e.g. "/media/cameras/x.jpg") are prefixed with the API base.
 export const API_BASE_URL = baseURL;
-export const mediaUrl = (p) => (p ? `${baseURL}${p}` : null);
+export const mediaUrl = (p) => {
+  if (!p) return null;
+  return /^https?:\/\//i.test(p) ? p : `${baseURL}${p}`;
+};
 
 // Attach JWT to every request if present.
 api.interceptors.request.use((config) => {
@@ -48,6 +52,14 @@ export const getDeviceGPS = (id, start, end) =>
 
 export const getDeviceCameraLatest = (id) =>
   api.get(`/api/devices/${id}/camera/latest`);
+
+// Backend-proxied live MJPEG stream URL for an <img src>. Same-origin (avoids
+// CORS/CSP), and the backend keeps a single upstream connection to the camera.
+// Token goes in the query because an <img> can't send an Authorization header.
+export const cameraStreamUrl = (id) => {
+  const token = localStorage.getItem('ems_token') || '';
+  return `${baseURL}/api/devices/${id}/camera/stream?token=${encodeURIComponent(token)}`;
+};
 
 export const getAlerts = (status, deviceId) =>
   api.get('/api/alerts', { params: { status, device_id: deviceId } });
