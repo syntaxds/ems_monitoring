@@ -42,3 +42,6 @@ Thumbs.db
 
 # Local throwaway test tooling (not part of the deliverable)
 _local/
+
+logs/
+model/model.pkl
