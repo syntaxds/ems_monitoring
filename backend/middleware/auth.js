@@ -8,12 +8,19 @@ const jwt = require('jsonwebtoken');
  */
 function verifyToken(req) {
   const header = req.headers.authorization || '';
-  if (!header.startsWith('Bearer ')) {
+  let token = null;
+  if (header.startsWith('Bearer ')) {
+    token = header.slice('Bearer '.length).trim();
+  } else if (req.query && req.query.token) {
+    // Fallback for browser elements that cannot set an Authorization header
+    // (e.g. an <img> pointed at the camera stream proxy).
+    token = String(req.query.token);
+  }
+  if (!token) {
     const err = new Error('Missing or malformed Authorization header');
     err.status = 401;
     throw err;
   }
-  const token = header.slice('Bearer '.length).trim();
   try {
     return jwt.verify(token, process.env.JWT_SECRET);
   } catch (e) {

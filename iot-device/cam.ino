@@ -1,0 +1,418 @@
+/**
+ * ============================================================
+ *  IoT-AI Based Secure Fuel Monitoring - ESP32-CAM Firmware
+ *  Target : ESP32-CAM MB (AI-Thinker)
+ *  UART   : GPIO1 (UOT/TX) → RX1 GPIO25 ESP32 Utama
+ *            GPIO3 (UOR/RX) ← TX1 GPIO26 ESP32 Utama
+ *  Baud   : 115200
+ * ============================================================
+ * Protocol UART dengan ESP32 Utama:
+ *   KIRIM  → "CAM_READY"           saat boot selesai
+ *   KIRIM  → "CAM_WIFI_OK:<ssid>"  saat WiFi tersambung
+ *   KIRIM  → "CAM_IP:<ip>"         IP lokal kamera
+ *   KIRIM  → "CAM_MDNS:<hostname>" alamat mDNS
+ *   KIRIM  → "CAM_OK:<count>"      foto berhasil diambil
+ *   KIRIM  → "CAM_ERROR:<pesan>"   jika ada error
+ *   TERIMA ← "CAPTURE"             ambil foto
+ *   TERIMA ← "STATUS"              kirim ulang status
+ *
+ * HTTP Endpoints:
+ *   /stream   → MJPEG live stream
+ *   /capture  → snapshot JPEG sekali
+ *   /status   → JSON status kamera
+ *
+ * Libraries:
+ *   - ESP32 Arduino Core (sudah include esp_camera.h)
+ *   - ESPmDNS (bawaan ESP32 core).0
+ * ============================================================
+ */
+
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <esp_camera.h>
+#include <esp_http_server.h>
+
+// ─── CONFIG - SESUAIKAN ──────────────────────────────────────
+// WiFi credentials live in secrets.h (gitignored).
+// Copy secrets.example.h -> secrets.h and fill in real values.
+#include "secrets.h"
+
+const char* WIFI_SSID     = SECRET_WIFI_SSID;
+const char* WIFI_PASSWORD = SECRET_WIFI_PASSWORD;
+const char* CAM_HOSTNAME  = "excavator-cam";   // → excavator-cam.local
+// ─────────────────────────────────────────────────────────────
+
+// ─── CAMERA PIN - AI-Thinker ESP32-CAM ───────────────────────
+#define PWDN_GPIO_NUM     32
+#define RESET_GPIO_NUM    -1
+#define XCLK_GPIO_NUM      0
+#define SIOD_GPIO_NUM     26
+#define SIOC_GPIO_NUM     27
+#define Y9_GPIO_NUM       35
+#define Y8_GPIO_NUM       34
+#define Y7_GPIO_NUM       39
+#define Y6_GPIO_NUM       36
+#define Y5_GPIO_NUM       21
+#define Y4_GPIO_NUM       19
+#define Y3_GPIO_NUM       18
+#define Y2_GPIO_NUM        5
+#define VSYNC_GPIO_NUM    25
+#define HREF_GPIO_NUM     23
+#define PCLK_GPIO_NUM     22
+// ─────────────────────────────────────────────────────────────
+
+// ─── LED Flash (GPIO4 di ESP32-CAM MB) ───────────────────────
+#define LED_FLASH_PIN  4
+// ─────────────────────────────────────────────────────────────
+
+// ─── STATE ───────────────────────────────────────────────────
+uint32_t     captureCount    = 0;
+bool         cameraOK        = false;
+httpd_handle_t streamServer  = NULL;
+httpd_handle_t captureServer = NULL;
+
+// ─── UART HELPER ─────────────────────────────────────────────
+// Semua komunikasi ke ESP32 Utama lewat Serial (GPIO1/GPIO3)
+// Prefix khusus agar terbaca oleh readCamUart() di main ESP32
+void camSend(const String& msg) {
+  Serial.println(msg);  // GPIO1 (UOT) → GPIO25 ESP32 Utama
+}
+
+// ─── SETUP ───────────────────────────────────────────────────
+void setup() {
+  // GPIO1 = UOT (TX ke ESP32 Utama), GPIO3 = UOR (RX dari ESP32 Utama)
+  Serial.begin(115200);
+  delay(500);
+
+  // Inisialisasi LED flash (mati dulu)
+  pinMode(LED_FLASH_PIN, OUTPUT);
+  digitalWrite(LED_FLASH_PIN, LOW);
+
+  // Inisialisasi kamera
+  cameraOK = initCamera();
+  if (!cameraOK) {
+    camSend("CAM_ERROR:Camera init failed");
+  }
+
+  // Sambungkan WiFi
+  connectWiFi();
+
+  // Mulai mDNS
+  if (MDNS.begin(CAM_HOSTNAME)) {
+    MDNS.addService("http", "tcp", 80);
+    camSend("CAM_MDNS:" + String(CAM_HOSTNAME) + ".local");
+  } else {
+    camSend("CAM_ERROR:mDNS failed");
+  }
+
+  // Mulai HTTP server
+  startStreamServer();
+  startCaptureServer();
+
+  // Kirim status siap ke ESP32 Utama
+  camSend("CAM_READY");
+}
+
+// ─── LOOP ────────────────────────────────────────────────────
+void loop() {
+  // Cek perintah dari ESP32 Utama via UART
+  readMainUart();
+
+  // Reconnect WiFi jika putus
+  if (WiFi.status() != WL_CONNECTED) {
+    camSend("CAM_ERROR:WiFi disconnected - reconnecting");
+    connectWiFi();
+  }
+
+  delay(10);
+}
+
+// ─── Inisialisasi Kamera ─────────────────────────────────────
+bool initCamera() {
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer   = LEDC_TIMER_0;
+  config.pin_d0       = Y2_GPIO_NUM;
+  config.pin_d1       = Y3_GPIO_NUM;
+  config.pin_d2       = Y4_GPIO_NUM;
+  config.pin_d3       = Y5_GPIO_NUM;
+  config.pin_d4       = Y6_GPIO_NUM;
+  config.pin_d5       = Y7_GPIO_NUM;
+  config.pin_d6       = Y8_GPIO_NUM;
+  config.pin_d7       = Y9_GPIO_NUM;
+  config.pin_xclk     = XCLK_GPIO_NUM;
+  config.pin_pclk     = PCLK_GPIO_NUM;
+  config.pin_vsync    = VSYNC_GPIO_NUM;
+  config.pin_href     = HREF_GPIO_NUM;
+  config.pin_sscb_sda = SIOD_GPIO_NUM;
+  config.pin_sscb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn     = PWDN_GPIO_NUM;
+  config.pin_reset    = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
+
+  // Resolusi lebih tinggi jika ada PSRAM
+  if (psramFound()) {
+    config.frame_size   = FRAMESIZE_VGA;    // 640x480
+    config.jpeg_quality = 12;              // 0-63, lebih kecil = kualitas lebih tinggi
+    config.fb_count     = 2;
+  } else {
+    config.frame_size   = FRAMESIZE_QVGA;  // 320x240
+    config.jpeg_quality = 20;
+    config.fb_count     = 1;
+  }
+
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK) {
+    return false;
+  }
+
+  // Optimasi sensor (OV2640)
+  sensor_t* s = esp_camera_sensor_get();
+  if (s != NULL) {
+    s->set_brightness(s, 0);     // -2 hingga 2
+    s->set_contrast(s, 0);       // -2 hingga 2
+    s->set_saturation(s, 0);     // -2 hingga 2
+    s->set_sharpness(s, 0);      // -2 hingga 2
+    s->set_whitebal(s, 1);       // auto white balance
+    s->set_awb_gain(s, 1);       // AWB gain aktif
+    s->set_wb_mode(s, 0);        // 0=auto
+    s->set_exposure_ctrl(s, 1);  // auto exposure
+    s->set_aec2(s, 0);
+    s->set_ae_level(s, 0);
+    s->set_aec_value(s, 300);
+    s->set_gain_ctrl(s, 1);      // auto gain
+    s->set_agc_gain(s, 0);
+    s->set_gainceiling(s, (gainceiling_t)0);
+    s->set_bpc(s, 0);
+    s->set_wpc(s, 1);
+    s->set_raw_gma(s, 1);
+    s->set_lenc(s, 1);
+    s->set_hmirror(s, 0);
+    s->set_vflip(s, 0);
+    s->set_dcw(s, 1);
+    s->set_colorbar(s, 0);
+  }
+
+  return true;
+}
+
+// ─── Koneksi WiFi ────────────────────────────────────────────
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+    delay(1000);
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    String ip = WiFi.localIP().toString();
+    camSend("CAM_WIFI_OK:" + String(WIFI_SSID));
+    camSend("CAM_IP:" + ip);
+  } else {
+    camSend("CAM_ERROR:WiFi connect failed");
+  }
+}
+
+// ─── Baca Perintah dari ESP32 Utama ──────────────────────────
+void readMainUart() {
+  while (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd.length() == 0) continue;
+
+    if (cmd == "CAPTURE") {
+      handleCaptureCommand();
+    } else if (cmd == "STATUS") {
+      handleStatusCommand();
+    }
+    // Perintah lain diabaikan
+  }
+}
+
+// ─── Handler Perintah CAPTURE ────────────────────────────────
+void handleCaptureCommand() {
+  if (!cameraOK) {
+    camSend("CAM_ERROR:Camera not initialized");
+    return;
+  }
+
+  // Nyalakan LED flash singkat
+  digitalWrite(LED_FLASH_PIN, HIGH);
+  delay(100);
+
+  camera_fb_t* fb = esp_camera_fb_get();
+
+  digitalWrite(LED_FLASH_PIN, LOW);
+
+  if (!fb) {
+    camSend("CAM_ERROR:Capture failed - no frame buffer");
+    return;
+  }
+
+  captureCount++;
+  esp_camera_fb_return(fb);
+
+  camSend("CAM_OK:" + String(captureCount));
+}
+
+// ─── Handler Perintah STATUS ─────────────────────────────────
+void handleStatusCommand() {
+  // Kirim ulang semua info penting
+  if (WiFi.status() == WL_CONNECTED) {
+    camSend("CAM_WIFI_OK:" + String(WIFI_SSID));
+    camSend("CAM_IP:" + WiFi.localIP().toString());
+    camSend("CAM_MDNS:" + String(CAM_HOSTNAME) + ".local");
+  } else {
+    camSend("CAM_ERROR:WiFi not connected");
+  }
+
+  if (cameraOK) {
+    camSend("CAM_READY");
+  } else {
+    camSend("CAM_ERROR:Camera not OK");
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HTTP SERVER - STREAM  (port 80)
+// ═══════════════════════════════════════════════════════════════
+
+// ─── Handler: /stream ────────────────────────────────────────
+#define PART_BOUNDARY "123456789000000000000987654321"
+static const char* _STREAM_CONTENT_TYPE =
+    "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
+static const char* _STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
+static const char* _STREAM_PART =
+    "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
+
+esp_err_t streamHandler(httpd_req_t* req) {
+  camera_fb_t* fb       = NULL;
+  esp_err_t    res      = ESP_OK;
+  size_t       _jpg_buf_len;
+  uint8_t*     _jpg_buf;
+  char         part_buf[64];
+
+  res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
+  if (res != ESP_OK) return res;
+
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "X-Framerate", "15");
+
+  while (true) {
+    fb = esp_camera_fb_get();
+    if (!fb) {
+      res = ESP_FAIL;
+      break;
+    }
+
+    _jpg_buf_len = fb->len;
+    _jpg_buf     = fb->buf;
+
+    res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY,
+                                strlen(_STREAM_BOUNDARY));
+    if (res == ESP_OK) {
+      size_t hlen = snprintf(part_buf, 64, _STREAM_PART, _jpg_buf_len);
+      res = httpd_resp_send_chunk(req, part_buf, hlen);
+    }
+    if (res == ESP_OK) {
+      res = httpd_resp_send_chunk(req, (const char*)_jpg_buf, _jpg_buf_len);
+    }
+
+    esp_camera_fb_return(fb);
+    fb = NULL;
+
+    if (res != ESP_OK) break;
+  }
+
+  return res;
+}
+
+// ─── Handler: /capture ───────────────────────────────────────
+esp_err_t captureHandler(httpd_req_t* req) {
+  camera_fb_t* fb = esp_camera_fb_get();
+  if (!fb) {
+    httpd_resp_send_500(req);
+    return ESP_FAIL;
+  }
+
+  httpd_resp_set_type(req, "image/jpeg");
+  httpd_resp_set_hdr(req, "Content-Disposition",
+                     "inline; filename=capture.jpg");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+  esp_err_t res = httpd_resp_send(req, (const char*)fb->buf, fb->len);
+  esp_camera_fb_return(fb);
+
+  captureCount++;
+  camSend("CAM_OK:" + String(captureCount));
+
+  return res;
+}
+
+// ─── Handler: /status ────────────────────────────────────────
+esp_err_t statusHandler(httpd_req_t* req) {
+  char json[256];
+  snprintf(json, sizeof(json),
+    "{"
+    "\"camera\":%s,"
+    "\"wifi\":\"%s\","
+    "\"ip\":\"%s\","
+    "\"rssi\":%d,"
+    "\"psram\":%s,"
+    "\"captures\":%lu"
+    "}",
+    cameraOK ? "true" : "false",
+    WiFi.SSID().c_str(),
+    WiFi.localIP().toString().c_str(),
+    WiFi.RSSI(),
+    psramFound() ? "true" : "false",
+    (unsigned long)captureCount
+  );
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_sendstr(req, json);
+}
+
+// ─── Mulai HTTP Server (stream + capture + status) ───────────
+void startStreamServer() {
+  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.server_port    = 80;
+  config.max_uri_handlers = 8;
+
+  httpd_uri_t stream_uri = {
+    .uri      = "/stream",
+    .method   = HTTP_GET,
+    .handler  = streamHandler,
+    .user_ctx = NULL
+  };
+
+  httpd_uri_t capture_uri = {
+    .uri      = "/capture",
+    .method   = HTTP_GET,
+    .handler  = captureHandler,
+    .user_ctx = NULL
+  };
+
+  httpd_uri_t status_uri = {
+    .uri      = "/status",
+    .method   = HTTP_GET,
+    .handler  = statusHandler,
+    .user_ctx = NULL
+  };
+
+  if (httpd_start(&streamServer, &config) == ESP_OK) {
+    httpd_register_uri_handler(streamServer, &stream_uri);
+    httpd_register_uri_handler(streamServer, &capture_uri);
+    httpd_register_uri_handler(streamServer, &status_uri);
+  }
+}
+
+// startCaptureServer() tidak diperlukan (semua di port 80)
+void startCaptureServer() {
+  // Placeholder – semua endpoint sudah di startStreamServer()
+}
