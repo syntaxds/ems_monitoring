@@ -190,7 +190,9 @@ async function handleTelemetry(deviceId, data) {
   );
 
   // 6. Run anomaly analysis (fail-safe — never throws, returns fallback on error).
-  const aiResult = await aiService.analyze(deviceId, fuelLevel, timestamp);
+  //    voltage/engine_status are forwarded so the engine's low-voltage and
+  //    engine-off fuel-drop rules can fire (null when absent — engine defaults).
+  const aiResult = await aiService.analyze(deviceId, fuelLevel, timestamp, voltage, engineStatus);
 
   // 7. Create alert and flag device if anomaly detected.
   if (aiResult.anomaly === true) {
@@ -270,4 +272,6 @@ function close() {
   }
 }
 
-module.exports = { init, close };
+// handleMessage and handleTelemetry are exported for integration testing of the
+// telemetry pipeline; they are not part of the public runtime surface.
+module.exports = { init, close, handleMessage, handleTelemetry };
