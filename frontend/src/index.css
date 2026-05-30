@@ -1,20 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ──────────── design tokens (from index v2.html) ──────────── */
 :root {
-  --bg: #1a1a1a;
-  --bg-panel: #232323;
-  --bg-elevated: #2b2b2b;
-  --border: #383838;
-  --text: #e8e8e8;
-  --text-dim: #9a9a9a;
-  --red: #e11d2a;
-  --red-dark: #b91c1c;
-  --green: #22c55e;
-  --grey: #6b7280;
-  --amber: #f59e0b;
-  --orange: #f97316;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  /* density scale: 1=compact, 10=spacious. multiplier on card padding & gaps */
+  --d: 1.0;
+  --pad-card: calc(20px * var(--d));
+  --pad-page: calc(28px * var(--d));
+  --gap-sec: calc(20px * var(--d));
 }
 
-* {
-  box-sizing: border-box;
+:root[data-theme='dark'] {
+  --bg: oklch(0.165 0 0);
+  --surface: oklch(0.205 0 0);
+  --surface-2: oklch(0.235 0 0);
+  --surface-3: oklch(0.275 0 0);
+  --border: oklch(0.285 0 0);
+  --border-strong: oklch(0.36 0 0);
+  --text: oklch(0.965 0 0);
+  --text-2: oklch(0.74 0 0);
+  --text-3: oklch(0.54 0 0);
+
+  --accent: oklch(0.62 0.14 25); /* toned-down red */
+  --accent-2: oklch(0.55 0.14 25);
+  --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
+  --accent-ink: oklch(0.99 0 0);
+
+  --success: oklch(0.74 0.12 155);
+  --warning: oklch(0.78 0.13 75);
+  --danger: oklch(0.66 0.18 25);
+  --info: oklch(0.7 0.11 240);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme='light'] {
+  --bg: oklch(0.985 0 0);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.965 0 0);
+  --surface-3: oklch(0.935 0 0);
+  --border: oklch(0.905 0 0);
+  --border-strong: oklch(0.82 0 0);
+  --text: oklch(0.2 0 0);
+  --text-2: oklch(0.42 0 0);
+  --text-3: oklch(0.58 0 0);
+
+  --accent: oklch(0.54 0.16 25);
+  --accent-2: oklch(0.47 0.16 25);
+  --accent-soft: color-mix(in oklch, var(--accent) 10%, transparent);
+  --accent-ink: oklch(0.99 0 0);
+
+  --success: oklch(0.55 0.13 155);
+  --warning: oklch(0.66 0.14 75);
+  --danger: oklch(0.54 0.18 25);
+  --info: oklch(0.55 0.12 240);
+
+  --shadow-sm: 0 1px 2px rgba(15, 15, 15, 0.04);
+  --shadow: 0 4px 18px rgba(15, 15, 15, 0.06);
 }
 
 html,
@@ -23,606 +73,288 @@ body,
   height: 100%;
   margin: 0;
 }
-
 body {
-  background-color: var(--bg);
+  background: var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'ss01', 'cv11';
+  letter-spacing: -0.005em;
 }
 
 a {
   color: inherit;
   text-decoration: none;
 }
-
 button {
   font-family: inherit;
   cursor: pointer;
 }
-
 input,
 select {
   font-family: inherit;
 }
 
-/* --- Layout --- */
-.app-shell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+/* numeric */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum';
 }
 
-.page {
-  padding: 20px 28px;
-  flex: 1;
-}
-
-.page-title {
-  font-size: 22px;
-  font-weight: 700;
-  margin: 0 0 16px;
-  letter-spacing: 0.5px;
-}
-
-/* --- Header --- */
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  height: 60px;
-  background: #141414;
-  border-bottom: 1px solid var(--border);
-}
-
-.header-brand {
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--red);
-  letter-spacing: 1px;
-}
-
-.header-nav {
-  display: flex;
-  gap: 6px;
-  margin-left: 28px;
-}
-
-.header-nav a {
-  padding: 8px 14px;
-  border-radius: 6px;
-  color: var(--text-dim);
-  font-size: 14px;
-  font-weight: 600;
-  position: relative;
-}
-
-.header-nav a.active {
-  color: #fff;
-  background: var(--bg-elevated);
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-
-.ws-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--text-dim);
-}
-
-.dot {
+/* scrollbar — thin, restrained */
+::-webkit-scrollbar {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
-  display: inline-block;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid var(--bg);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
 }
 
-.dot.green {
-  background: var(--green);
-  box-shadow: 0 0 6px var(--green);
+/* ───── focus ring ───── */
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in oklch, var(--accent) 50%, transparent);
+}
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in oklch, var(--accent) 50%, transparent);
 }
 
-.dot.red {
-  background: var(--red);
-  box-shadow: 0 0 6px var(--red);
-}
+/* Base component classes live in the `components` layer so Tailwind utility
+   classes (pl-9, pr-10, h-11, px-2.5, …) reliably override them. */
+@layer components {
+  /* ───── card ───── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .card-pad {
+    padding: var(--pad-card);
+  }
 
-.nav-badge {
-  background: var(--red);
-  color: #fff;
-  border-radius: 10px;
-  font-size: 11px;
-  padding: 1px 6px;
-  margin-left: 6px;
-}
-
+/* ───── button ───── */
 .btn {
-  background: var(--bg-elevated);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  background: var(--surface-2);
   color: var(--text);
-  border: 1px solid var(--border);
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 600;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.06s ease;
+  white-space: nowrap;
+  cursor: pointer;
 }
-
 .btn:hover {
-  background: #343434;
+  background: var(--surface-3);
 }
-
+.btn:active {
+  transform: translateY(0.5px);
+}
 .btn-primary {
-  background: var(--red);
-  border-color: var(--red);
-  color: #fff;
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
 }
-
 .btn-primary:hover {
-  background: var(--red-dark);
+  background: color-mix(in oklch, var(--text) 85%, var(--bg));
 }
-
+.btn-accent {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.btn-accent:hover {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+}
+.btn-ghost:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+}
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* --- Summary cards --- */
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.summary-card {
-  background: var(--bg-panel);
+/* ───── input ───── */
+.input {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 18px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13.5px;
+  font-family: var(--font-sans);
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.input:hover {
+  border-color: var(--border-strong);
+}
+.input:focus {
+  outline: none;
+  border-color: color-mix(in oklch, var(--accent) 60%, var(--border-strong));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
+}
+.input::placeholder {
+  color: var(--text-3);
+}
 }
 
-.summary-card .label {
+/* ───── alpha helpers (CSS vars can't compose with Tailwind /N) ───── */
+.bg-accent\/10 {
+  background-color: color-mix(in oklch, var(--accent) 10%, transparent);
+}
+.bg-accent\/15 {
+  background-color: color-mix(in oklch, var(--accent) 15%, transparent);
+}
+.bg-ok\/12 {
+  background-color: color-mix(in oklch, var(--success) 12%, transparent);
+}
+.bg-warn\/12 {
+  background-color: color-mix(in oklch, var(--warning) 12%, transparent);
+}
+.bg-bad\/10 {
+  background-color: color-mix(in oklch, var(--danger) 10%, transparent);
+}
+.bg-bad\/15 {
+  background-color: color-mix(in oklch, var(--danger) 15%, transparent);
+}
+.bg-info\/12 {
+  background-color: color-mix(in oklch, var(--info) 12%, transparent);
+}
+.bg-surface\/80 {
+  background-color: color-mix(in oklch, var(--surface) 80%, transparent);
+}
+.bg-bg\/80 {
+  background-color: color-mix(in oklch, var(--bg) 80%, transparent);
+}
+.bg-bg\/60 {
+  background-color: color-mix(in oklch, var(--bg) 60%, transparent);
+}
+.text-bad {
+  color: var(--danger);
+}
+.text-warn {
+  color: var(--warning);
+}
+.text-ok {
+  color: var(--success);
+}
+.text-info {
+  color: var(--info);
+}
+.text-accent {
+  color: var(--accent);
+}
+.border-bad\/40 {
+  border-color: color-mix(in oklch, var(--danger) 40%, transparent);
+}
+
+/* divide-y w/ token */
+.divide-line > * + * {
+  border-top: 1px solid var(--border);
+}
+
+/* simple table */
+table.t {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 13px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
-
-.summary-card .value {
-  font-size: 32px;
-  font-weight: 800;
-  margin-top: 6px;
-}
-
-.summary-card.accent-green .value {
-  color: var(--green);
-}
-.summary-card.accent-grey .value {
-  color: var(--grey);
-}
-.summary-card.accent-red .value {
-  color: var(--red);
-}
-
-/* --- Overview two-column --- */
-.overview-cols {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 16px;
-  align-items: start;
-}
-
-.panel {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.panel-header {
-  padding: 12px 16px;
-  font-weight: 700;
-  border-bottom: 1px solid var(--border);
-  font-size: 15px;
-}
-
-.fleet-list {
-  max-height: 70vh;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* --- Fleet status card --- */
-.fleet-card {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px;
-}
-
-.fleet-card.anomaly {
-  border: 1px solid var(--red);
-  box-shadow: 0 0 0 1px var(--red) inset;
-}
-
-.fleet-card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.fleet-card .device-name {
-  font-weight: 700;
-  font-size: 16px;
-}
-
-.fleet-card .device-id {
+table.t th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-3);
   font-size: 12px;
-  color: var(--text-dim);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
 }
-
-.badge {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 4px;
-  text-transform: uppercase;
-}
-
-.badge.running {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--green);
-}
-.badge.idle {
-  background: rgba(107, 114, 128, 0.2);
-  color: #cbd5e1;
-}
-.badge.off {
-  background: rgba(107, 114, 128, 0.2);
-  color: #9ca3af;
-}
-.badge.anomaly-badge {
-  background: var(--red);
-  color: #fff;
-}
-
-.meter {
-  height: 8px;
-  background: #111;
-  border-radius: 4px;
-  overflow: hidden;
-  margin: 8px 0 4px;
-}
-
-.meter-fill {
-  height: 100%;
-  background: var(--green);
-}
-
-.meter-fill.low {
-  background: var(--red);
-}
-.meter-fill.mid {
-  background: var(--amber);
-}
-
-.fleet-card .row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  color: var(--text-dim);
-  margin-top: 4px;
-}
-
-.fleet-card .row span.value {
+table.t td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
   color: var(--text);
 }
-
-/* --- Map --- */
-.map-wrap {
-  height: 70vh;
-  width: 100%;
+table.t tr:last-child td {
+  border-bottom: 0;
 }
+table.t tr:hover td {
+  background: var(--surface-2);
+}
+
+/* gentle pulse for live dot */
+@keyframes p {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.pulse {
+  animation: p 2s ease-in-out infinite;
+}
+
+/* ───── Leaflet — keep the existing map, themed to the token palette ───── */
 .leaflet-container {
   height: 100%;
   width: 100%;
-  background: #0f0f0f;
+  background: var(--surface-2);
+  font-family: var(--font-sans);
 }
-
-/* --- Login --- */
-.login-screen {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #1a1a1a;
-  background-image: repeating-linear-gradient(
-      0deg,
-      rgba(255, 255, 255, 0.03) 0,
-      rgba(255, 255, 255, 0.03) 1px,
-      transparent 1px,
-      transparent 40px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.03) 0,
-      rgba(255, 255, 255, 0.03) 1px,
-      transparent 1px,
-      transparent 40px
-    );
+/* Soften default OSM tiles in dark mode so the map fits the control-room look */
+:root[data-theme='dark'] .leaflet-tile {
+  filter: brightness(0.72) contrast(1.05) saturate(0.85);
 }
-
-.login-card {
-  width: 360px;
-  background: rgba(25, 25, 25, 0.92);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 36px 32px;
-  text-align: center;
-}
-
-.login-logo {
-  font-size: 54px;
-  font-weight: 900;
-  color: var(--red);
-  letter-spacing: 4px;
-  line-height: 1;
-}
-
-.login-sub {
-  font-size: 12px;
-  letter-spacing: 3px;
-  color: var(--text-dim);
-  margin: 8px 0 28px;
-}
-
-.login-field {
-  text-align: left;
-  margin-bottom: 16px;
-}
-
-.login-field label {
-  display: block;
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.login-field input {
-  width: 100%;
-  padding: 11px 12px;
-  background: #141414;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--surface);
   color: var(--text);
-  font-size: 14px;
-}
-
-.login-field input:focus {
-  outline: none;
-  border-color: var(--red);
-}
-
-.login-error {
-  background: rgba(225, 29, 42, 0.12);
-  border: 1px solid var(--red);
-  color: #ffb4ba;
-  border-radius: 6px;
-  padding: 9px;
-  font-size: 13px;
-  margin-bottom: 16px;
-}
-
-.login-btn {
-  width: 100%;
-  padding: 12px;
-  margin-top: 4px;
-  font-size: 15px;
-}
-
-/* --- Forms / controls --- */
-.controls-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-
-.select,
-.date-input {
-  background: var(--bg-elevated);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.leaflet-popup-content {
+  font-size: 12px;
+}
+.leaflet-bar a {
+  background: var(--surface);
   color: var(--text);
-  padding: 9px 12px;
-  border-radius: 6px;
-  font-size: 14px;
+  border-color: var(--border);
 }
-
-.range-btns {
-  display: flex;
-  gap: 6px;
-}
-
-.range-btns .btn.active {
-  background: var(--red);
-  border-color: var(--red);
-  color: #fff;
-}
-
-/* --- Charts --- */
-.chart-panel {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px;
-  margin-bottom: 18px;
-}
-
-.chart-panel h3 {
-  margin: 0 0 12px;
-  font-size: 15px;
-}
-
-.empty-state {
-  padding: 48px;
-  text-align: center;
-  color: var(--text-dim);
-  font-size: 15px;
-}
-
-/* --- Alerts --- */
-.alert-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-left-width: 4px;
-  border-radius: 8px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.alert-card.sev-high {
-  border-left-color: var(--red);
-}
-.alert-card.sev-medium {
-  border-left-color: var(--amber);
-}
-.alert-card.sev-low {
-  border-left-color: var(--green);
-}
-
-.sev-pill {
-  font-size: 11px;
-  font-weight: 800;
-  padding: 3px 9px;
-  border-radius: 12px;
-  text-transform: uppercase;
-}
-.sev-pill.sev-high {
-  background: var(--red);
-  color: #fff;
-}
-.sev-pill.sev-medium {
-  background: var(--amber);
-  color: #1a1a1a;
-}
-.sev-pill.sev-low {
-  background: var(--green);
-  color: #0a0a0a;
-}
-
-.alert-meta {
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-top: 6px;
-}
-
-/* --- Export preview --- */
-.preview-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 16px 0;
-}
-.preview-table th,
-.preview-table td {
-  border: 1px solid var(--border);
-  padding: 10px 12px;
-  text-align: left;
-  font-size: 14px;
-}
-.preview-table th {
-  background: var(--bg-elevated);
-  color: var(--text-dim);
-  text-transform: uppercase;
-  font-size: 12px;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.spinner {
-  color: var(--text-dim);
-  padding: 20px;
-}
-
-/* --- Camera viewer --- */
-.camera-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-}
-
-.camera-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.camera-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.camera-frame {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: #0d0d0d;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.camera-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.camera-placeholder {
-  color: var(--text-dim);
-  text-align: center;
-  font-size: 14px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.camera-eye {
-  font-size: 40px;
-  color: #2f2f2f;
-}
-
-.camera-foot {
-  padding: 10px 14px;
-  font-size: 12px;
-  color: var(--text-dim);
-  border-top: 1px solid var(--border);
+.leaflet-bar a:hover {
+  background: var(--surface-2);
 }

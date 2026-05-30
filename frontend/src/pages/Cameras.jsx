@@ -1,57 +1,332 @@
-import React, { useEffect, useState } from 'react';
-import { getDevices } from '../services/api';
+import React, { useEffect, useState, useCallback } from 'react';
+import { getDevices, getDeviceCameraLatest, mediaUrl, cameraStreamUrl } from '../services/api';
 import socketService from '../services/socket';
-import CameraCard from '../components/CameraCard';
+import Icon from '../components/ui/Icon';
+import { PageHeader, Segmented, FilterChips, Pill, Dot, EmptyState, SignalBars } from '../components/ui';
+import { fmtTime, fmtRelative } from '../lib/format';
+
+// Resolve the <img> src for a frame: live streams go through the same-origin
+// backend proxy; stored snapshots load from /media with a cache-bust.
+function frameSrc(deviceId, frame) {
+  if (!frame || !frame.image_url) return null;
+  const isStream = /^https?:\/\//i.test(frame.image_url);
+  return isStream
+    ? cameraStreamUrl(deviceId)
+    : `${mediaUrl(frame.image_url)}?t=${encodeURIComponent(frame.timestamp || '')}`;
+}
 
 export default function Cameras() {
   const [devices, setDevices] = useState([]);
+  const [frames, setFrames] = useState({}); // device_id -> { image_url, timestamp }
+  const [layout, setLayout] = useState('grid');
+  const [filter, setFilter] = useState('all');
+  const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+
+  const loadFrame = useCallback(async (deviceId) => {
+    try {
+      const { data } = await getDeviceCameraLatest(deviceId);
+      setFrames((prev) => ({ ...prev, [deviceId]: { image_url: data.image_url, timestamp: data.timestamp } }));
+    } catch (e) {
+      setFrames((prev) => ({ ...prev, [deviceId]: null }));
+    }
+  }, []);
+
+  const loadAll = useCallback(
+    async (list) => {
+      await Promise.allSettled(list.map((d) => loadFrame(d.device_id)));
+    },
+    [loadFrame]
+  );
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         const { data } = await getDevices();
-        if (mounted) setDevices(data);
+        if (!mounted) return;
+        setDevices(data);
+        loadAll(data);
       } catch (e) {
-        if (mounted) setError('Failed to load devices');
+        if (mounted) setDevices([]);
       } finally {
         if (mounted) setLoading(false);
       }
     })();
 
-    // Keep device status badges fresh from live telemetry.
+    const onFrame = (data) => {
+      setFrames((prev) => ({ ...prev, [data.device_id]: { image_url: data.image_url, timestamp: data.timestamp } }));
+    };
     const onFuel = (d) =>
       setDevices((prev) => prev.map((x) => (x.device_id === d.device_id ? { ...x, status: 'active' } : x)));
     const onAlert = (d) =>
       setDevices((prev) => prev.map((x) => (x.device_id === d.device_id ? { ...x, status: 'anomaly' } : x)));
 
     socketService.connect();
+    socketService.on('camera_frame', onFrame);
     socketService.on('fuel_update', onFuel);
     socketService.on('alert_new', onAlert);
     return () => {
       mounted = false;
+      socketService.off('camera_frame', onFrame);
       socketService.off('fuel_update', onFuel);
       socketService.off('alert_new', onAlert);
     };
-  }, []);
+  }, [loadAll]);
+
+  const isOnline = (d) => !!(frames[d.device_id] && frames[d.device_id].image_url);
+  const online = devices.filter(isOnline).length;
+
+  const filtered = devices.filter((d) => {
+    if (filter === 'online') return isOnline(d);
+    if (filter === 'offline') return !isOnline(d);
+    if (filter === 'anomaly') return d.status === 'anomaly';
+    return true;
+  });
+
+  const idx = selected ? devices.findIndex((d) => d.device_id === selected.device_id) : -1;
+  const openRel = (delta) => {
+    if (idx < 0) return;
+    setSelected(devices[(idx + delta + devices.length) % devices.length]);
+  };
 
   return (
-    <div className="page">
-      <h1 className="page-title">Camera Viewer</h1>
+    <div className="space-y-5">
+      <PageHeader
+        title="Cameras"
+        subtitle="Latest on-vehicle frame from each device."
+        right={
+          <>
+            <span>
+              {online} / {devices.length} online
+            </span>
+          </>
+        }
+        actions={
+          <>
+            <Segmented
+              value={layout}
+              onChange={setLayout}
+              size="sm"
+              options={[
+                { value: 'grid', label: 'Grid' },
+                { value: 'wall', label: 'Wall' },
+              ]}
+            />
+            <button className="btn btn-ghost" onClick={() => loadAll(devices)}>
+              <Icon name="refresh" size={13} />
+              Refresh all
+            </button>
+          </>
+        }
+      />
 
-      {error && <div className="login-error" style={{ maxWidth: 400 }}>{error}</div>}
-      {loading && <div className="spinner">Loading cameras…</div>}
-      {!loading && devices.length === 0 && (
-        <div className="empty-state">No devices registered yet. Cameras appear once a device is registered.</div>
-      )}
-
-      <div className="camera-grid">
-        {devices.map((d) => (
-          <CameraCard key={d.device_id} device={d} />
-        ))}
+      <div className="card flex items-center justify-between gap-3 px-4 py-3 flex-wrap">
+        <FilterChips
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all', label: 'All', count: devices.length },
+            { value: 'online', label: 'Online', count: online },
+            { value: 'offline', label: 'Offline', count: devices.length - online },
+            { value: 'anomaly', label: 'Anomaly', count: devices.filter((d) => d.status === 'anomaly').length },
+          ]}
+        />
+        <div className="flex items-center gap-2 text-[12px] text-ink3">
+          <Dot color="var(--success)" size={6} pulse />
+          Live · {fmtTime(Date.now())}
+        </div>
       </div>
+
+      {loading && <div className="card card-pad text-center text-ink3 text-[13px]">Loading cameras…</div>}
+
+      <div
+        className={
+          layout === 'grid'
+            ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4'
+            : 'grid grid-cols-1 md:grid-cols-2 gap-3'
+        }
+      >
+        {!loading &&
+          filtered.map((d) => (
+            <CameraTile key={d.device_id} device={d} frame={frames[d.device_id]} onOpen={() => setSelected(d)} />
+          ))}
+        {!loading && filtered.length === 0 && (
+          <div className="col-span-full card">
+            <EmptyState
+              icon="camera"
+              title="No cameras match this filter"
+              hint={devices.length === 0 ? 'No devices registered yet.' : 'Switch filters or wait for the next frame.'}
+            />
+          </div>
+        )}
+      </div>
+
+      {selected && (
+        <CameraModal
+          device={selected}
+          frame={frames[selected.device_id]}
+          onClose={() => setSelected(null)}
+          onPrev={() => openRel(-1)}
+          onNext={() => openRel(1)}
+        />
+      )}
+    </div>
+  );
+}
+
+function CameraOffline() {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center text-ink3 gap-2" style={{ background: '#0a0a0a' }}>
+      <Icon name="wifiOff" size={26} />
+      <div className="text-[12px] font-medium text-ink2">No signal</div>
+      <div className="text-[11px] text-ink3">Awaiting camera frame…</div>
+    </div>
+  );
+}
+
+function CameraFeed({ device, frame }) {
+  const [imgError, setImgError] = useState(false);
+  const src = frameSrc(device.device_id, frame);
+  const online = !!src && !imgError;
+  if (!online) return <CameraOffline />;
+  return (
+    <img
+      src={src}
+      alt={`${device.device_name} latest frame`}
+      className="absolute inset-0 w-full h-full object-cover"
+      onError={() => setImgError(true)}
+    />
+  );
+}
+
+function CameraTile({ device, frame, onOpen }) {
+  const online = !!(frame && frame.image_url);
+  const isAnom = device.status === 'anomaly';
+  return (
+    <button
+      onClick={onOpen}
+      className="card overflow-hidden text-left group flex flex-col"
+      style={{ borderColor: isAnom ? 'color-mix(in oklch, var(--danger) 50%, var(--border))' : 'var(--border)' }}
+    >
+      <div className="relative aspect-video overflow-hidden" style={{ background: '#0a0a0a' }}>
+        <CameraFeed device={device} frame={frame} />
+
+        {/* Top HUD */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between text-[11px]">
+          <div className="flex items-center gap-1.5">
+            {online ? (
+              <span className="inline-flex items-center gap-1 px-1.5 h-[20px] rounded-md text-white font-medium" style={{ background: 'rgba(0,0,0,0.55)' }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-bad pulse" />
+                Live
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-1.5 h-[20px] rounded-md text-white/70 font-medium" style={{ background: 'rgba(0,0,0,0.55)' }}>
+                <Icon name="wifiOff" size={10} />
+                Offline
+              </span>
+            )}
+            {isAnom && (
+              <span className="inline-flex items-center gap-1 px-1.5 h-[20px] rounded-md text-white font-medium" style={{ background: 'var(--danger)' }}>
+                Anomaly
+              </span>
+            )}
+          </div>
+          {frame?.timestamp && (
+            <span className="text-white/85 px-1.5 h-[20px] inline-flex items-center rounded-md mono tnum" style={{ background: 'rgba(0,0,0,0.45)' }}>
+              {fmtTime(frame.timestamp)}
+            </span>
+          )}
+        </div>
+
+        <div className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition-opacity translate-y-7">
+          <span className="w-7 h-7 rounded-md text-white flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.55)' }}>
+            <Icon name="expand" size={12} />
+          </span>
+        </div>
+      </div>
+
+      <div className="p-3 flex items-center justify-between gap-3 bg-surface">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-medium truncate">{device.device_name}</span>
+            <span className="mono text-[11px] text-ink3">{device.device_id}</span>
+          </div>
+          <div className="text-[11.5px] text-ink3 truncate mt-0.5">
+            {device.operator_name || 'Unassigned'}
+            {device.site ? ` · ${device.site}` : ''}
+          </div>
+        </div>
+        <div className="shrink-0 flex items-center gap-2 text-ink3">
+          {device.signal != null && <SignalBars value={online ? device.signal : 0} />}
+          <span className="text-[11px]">{frame?.timestamp ? fmtRelative(frame.timestamp) : '—'}</span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function CameraModal({ device, frame, onClose, onPrev, onNext }) {
+  const online = !!(frame && frame.image_url);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
+      <div className="card max-w-5xl w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 h-[52px] border-b border-line flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Icon name="camera" size={15} className="text-ink2" />
+            <span className="text-[14px] font-semibold">{device.device_name}</span>
+            <span className="mono text-[11.5px] text-ink3">{device.device_id}</span>
+            {device.status === 'anomaly' && <Pill tone="bad">Anomaly</Pill>}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button className="btn btn-icon btn-ghost" onClick={onPrev}>
+              <Icon name="chevronLeft" size={13} />
+            </button>
+            <button className="btn btn-icon btn-ghost" onClick={onNext}>
+              <Icon name="chevronRight" size={13} />
+            </button>
+            <button className="btn btn-icon btn-ghost" onClick={onClose}>
+              <Icon name="x" size={13} />
+            </button>
+          </div>
+        </div>
+        <div className="relative aspect-video bg-black">
+          <CameraFeed device={device} frame={frame} />
+          <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[11px] text-white/85">
+            {online ? (
+              <span className="px-2 h-[22px] rounded-md inline-flex items-center gap-1.5 font-medium" style={{ background: 'rgba(0,0,0,0.55)' }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-bad pulse" />
+                Live
+              </span>
+            ) : (
+              <span className="px-2 h-[22px] rounded-md inline-flex items-center gap-1.5 font-medium" style={{ background: 'rgba(0,0,0,0.55)' }}>
+                <Icon name="wifiOff" size={11} />
+                Offline
+              </span>
+            )}
+            {frame?.timestamp && (
+              <span className="px-2 h-[22px] rounded-md inline-flex items-center gap-1.5 mono tnum" style={{ background: 'rgba(0,0,0,0.45)' }}>
+                {fmtTime(frame.timestamp)}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="px-5 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-[13px]">
+          <Meta label="Operator" value={device.operator_name || '—'} />
+          <Meta label="Status" value={device.status || '—'} />
+          <Meta label="Engine" value={device.engine_status || '—'} />
+          <Meta label="Updated" value={frame?.timestamp ? fmtRelative(frame.timestamp) : '—'} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Meta({ label, value }) {
+  return (
+    <div>
+      <div className="text-[11.5px] text-ink3">{label}</div>
+      <div className="mt-0.5 text-ink capitalize">{value}</div>
     </div>
   );
 }

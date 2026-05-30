@@ -1,8 +1,9 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import PrivateRoute from './components/PrivateRoute';
-import Header from './components/Header';
+import Shell from './components/Shell';
 import Login from './pages/Login';
 import Overview from './pages/Overview';
 import FuelAnalytics from './pages/FuelAnalytics';
@@ -10,18 +11,14 @@ import Alerts from './pages/Alerts';
 import ExportData from './pages/ExportData';
 import Cameras from './pages/Cameras';
 
-// Layout wrapper that renders the persistent header above private pages.
+// Layout wrapper: sidebar + topbar shell around private pages.
 function PrivateLayout({ children }) {
-  return (
-    <div className="app-shell">
-      <Header />
-      {children}
-    </div>
-  );
+  return <Shell>{children}</Shell>;
 }
 
 export default function App() {
   return (
+    <ThemeProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -83,5 +80,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </ThemeProvider>
   );
 }

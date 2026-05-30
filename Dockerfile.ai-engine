@@ -1,0 +1,24 @@
+# Local-dev container for Emilia's Flask AI engine.
+# Kept at repo root (not inside ai-engine/) so her source folder stays pristine —
+# the trained model.pkl and logs/ are generated INSIDE the container, never in
+# the mounted source tree. Build context is ai-engine/.
+#
+#   docker build -f Dockerfile.ai-engine -t ems-ai-engine ./ai-engine
+#   docker run -d --name ems-ai -p 5001:5001 --restart unless-stopped ems-ai-engine
+#
+# Backend reaches it via AI_ENGINE_URL=http://127.0.0.1:5001 (see backend/.env).
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+# NOTE: app.py imports `python-dotenv` but it is missing from Emilia's
+# requirements.txt (the engine crashes on boot without it). We install it here
+# so local dev works without editing her folder. Emilia should add
+# `python-dotenv` to ai-engine/requirements.txt for the real fix.
+RUN pip install --no-cache-dir -r requirements.txt python-dotenv
+
+COPY . .
+
+EXPOSE 5001
+CMD ["python", "app.py"]
