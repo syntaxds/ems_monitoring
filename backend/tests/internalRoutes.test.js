@@ -47,6 +47,10 @@ describe('internalOnly middleware', () => {
     expect(run('::1').nextCalled).toBe(true);
   });
 
+  it('allows loopback IPv4 (127.0.0.1)', () => {
+    expect(run('127.0.0.1').nextCalled).toBe(true);
+  });
+
   it('rejects an external IP with 403', () => {
     const { nextCalled, res } = run('203.0.113.5');
     expect(nextCalled).toBe(false);
