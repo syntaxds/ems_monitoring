@@ -7,12 +7,13 @@ import 'leaflet/dist/leaflet.css';
 const DEFAULT_CENTER = [-2.5489, 118.0149]; // Indonesia fallback
 const DEFAULT_ZOOM = 5;
 const FOCUS_ZOOM = 7;
+const PIN_ZOOM = 13;
 
-// Marker color by device status.
+// Marker color by device status (token-aligned palette).
 function statusColor(status) {
-  if (status === 'anomaly') return '#e11d2a';
-  if (status === 'active') return '#22c55e';
-  return '#6b7280'; // idle / off / unknown
+  if (status === 'anomaly') return '#e5484d';
+  if (status === 'active') return '#46a758';
+  return '#8b8b8b'; // idle / off / unknown
 }
 
 function hasCoords(d) {
@@ -53,7 +54,18 @@ function MapController({ center, zoom }) {
   return null;
 }
 
-export default function MapView({ devices }) {
+// Pans/zooms to a focused device when its id changes (drives list → map sync).
+function FocusController({ device }) {
+  const map = useMap();
+  useEffect(() => {
+    if (device && hasCoords(device)) {
+      map.flyTo([Number(device.latitude), Number(device.longitude)], PIN_ZOOM, { duration: 0.6 });
+    }
+  }, [map, device]);
+  return null;
+}
+
+export default function MapView({ devices, focusId, onMarkerClick }) {
   const located = useMemo(() => devices.filter(hasCoords), [devices]);
 
   const center = useMemo(() => {
@@ -64,45 +76,49 @@ export default function MapView({ devices }) {
   }, [located]);
 
   const zoom = located.length ? FOCUS_ZOOM : DEFAULT_ZOOM;
+  const focused = useMemo(
+    () => (focusId ? located.find((d) => d.device_id === focusId) : null),
+    [focusId, located]
+  );
 
   return (
-    <div className="map-wrap">
-      <MapContainer
-        center={center}
-        zoom={zoom}
-        scrollWheelZoom
-        style={{ height: '100%', width: '100%' }}
-      >
+    <div style={{ height: '100%', width: '100%' }}>
+      <MapContainer center={center} zoom={zoom} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
         <MapController center={center} zoom={zoom} />
+        <FocusController device={focused} />
         <TileLayer
           attribution="&copy; OpenStreetMap contributors"
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {located.map((d) => (
-          <CircleMarker
-            key={d.device_id}
-            center={[Number(d.latitude), Number(d.longitude)]}
-            radius={9}
-            pathOptions={{
-              color: statusColor(d.status),
-              fillColor: statusColor(d.status),
-              fillOpacity: 0.85,
-              weight: 2
-            }}
-          >
-            <Popup>
-              <strong>{d.device_name}</strong>
-              <br />
-              ID: {d.device_id}
-              <br />
-              Fuel: {d.fuel_level != null ? `${Number(d.fuel_level).toFixed(1)} L` : '—'}
-              <br />
-              Status: {d.status}
-              <br />
-              Updated: {d.last_updated ? new Date(d.last_updated).toLocaleString() : '—'}
-            </Popup>
-          </CircleMarker>
-        ))}
+        {located.map((d) => {
+          const isFocus = d.device_id === focusId;
+          return (
+            <CircleMarker
+              key={d.device_id}
+              center={[Number(d.latitude), Number(d.longitude)]}
+              radius={isFocus ? 11 : 8}
+              eventHandlers={onMarkerClick ? { click: () => onMarkerClick(d.device_id) } : undefined}
+              pathOptions={{
+                color: statusColor(d.status),
+                fillColor: statusColor(d.status),
+                fillOpacity: 0.85,
+                weight: isFocus ? 4 : 2,
+              }}
+            >
+              <Popup>
+                <strong>{d.device_name}</strong>
+                <br />
+                ID: {d.device_id}
+                <br />
+                Fuel: {d.fuel_level != null ? `${Number(d.fuel_level).toFixed(1)} L` : '—'}
+                <br />
+                Status: {d.status}
+                <br />
+                Updated: {d.last_updated ? new Date(d.last_updated).toLocaleString() : '—'}
+              </Popup>
+            </CircleMarker>
+          );
+        })}
       </MapContainer>
     </div>
   );
