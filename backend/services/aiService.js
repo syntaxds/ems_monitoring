@@ -35,12 +35,21 @@ function logAiError(context, err) {
 /**
  * Single-device anomaly analysis. Always resolves — on any error it returns
  * the fail-safe response so the telemetry pipeline continues uninterrupted.
+ *
+ * `voltage` and `engine_status` are optional: when supplied they are forwarded
+ * so the engine's low-voltage and engine-off fuel-drop rules can fire; when
+ * omitted they are left out of the payload and the engine applies its own
+ * defaults (12.4 V / "ON").
  */
-async function analyze(deviceId, fuelLevel, timestamp) {
+async function analyze(deviceId, fuelLevel, timestamp, voltage, engineStatus) {
   try {
+    const payload = { device_id: deviceId, fuel_level: fuelLevel, timestamp };
+    if (voltage != null) payload.voltage = voltage;
+    if (engineStatus != null) payload.engine_status = engineStatus;
+
     const response = await axios.post(
       `${AI_BASE_URL}/internal/ai/analyze`,
-      { device_id: deviceId, fuel_level: fuelLevel, timestamp },
+      payload,
       { headers: { 'x-api-key': AI_API_KEY }, timeout: AI_TIMEOUT }
     );
     return response.data;
