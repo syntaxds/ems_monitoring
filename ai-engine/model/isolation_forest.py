@@ -1,15 +1,14 @@
 import os
 import joblib
 import numpy as np
+import pandas as pd
 
 from datetime import datetime
 from sklearn.ensemble import IsolationForest
 
-
 MODEL_DIR = "model"
-
 MODEL_VERSION = "1.1.0"
-
+TRAINING_DATA_PATH = "data/training_data.csv"
 LATEST_MODEL_PATH = os.path.join(
     MODEL_DIR,
     "model.pkl"
@@ -23,30 +22,25 @@ VERSIONED_MODEL_PATH = os.path.join(
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 
-# IMPROVED TRAINING DATA
-# [fuel_level, voltage]
+def load_training_data():
 
-train_data = np.array([
-    [50, 12.4],
-    [52, 12.5],
-    [49, 12.3],
-    [51, 12.6],
-    [53, 12.4],
-    [50, 12.5],
-    [48, 12.2],
-    [54, 12.6],
-    [47, 12.3],
-    [55, 12.7],
-    [46, 12.4],
-    [56, 12.5],
-    [58, 12.6],
-    [45, 12.2],
-    [57, 12.4],
-    [52, 12.7]
-])
+    if os.path.exists(TRAINING_DATA_PATH):
+
+        df = pd.read_csv(TRAINING_DATA_PATH)
+
+        return df[
+            ["fuel_level", "voltage"]
+        ].values
+
+    return np.array([
+        [50, 12.4],
+        [52, 12.5]
+    ])
 
 
-def create_model(training_data=train_data):
+def create_model():
+
+    training_data = load_training_data()
 
     model = IsolationForest(
         contamination=0.1,
@@ -61,13 +55,11 @@ def create_model(training_data=train_data):
 
 def save_model(model):
 
-    # SAVE VERSIONED MODEL
     joblib.dump(
         model,
         VERSIONED_MODEL_PATH
     )
 
-    # UPDATE LATEST MODEL
     joblib.dump(
         model,
         LATEST_MODEL_PATH
