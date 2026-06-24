@@ -93,6 +93,8 @@ const ICON_PATHS = {
     </g>
   ),
   check: <polyline points="20 6 9 17 4 12" />,
+  play: <polygon points="6 4 20 12 6 20 6 4" />,
+  square: <rect x="5" y="5" width="14" height="14" rx="2" />,
   plus: (
     <g>
       <line x1="12" y1="5" x2="12" y2="19" />
