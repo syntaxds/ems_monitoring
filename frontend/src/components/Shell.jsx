@@ -14,6 +14,7 @@ const SCREENS = [
   { to: '/alerts', label: 'Alerts', icon: 'alert' },
   { to: '/cameras', label: 'Cameras', icon: 'camera' },
   { to: '/export', label: 'Export', icon: 'download' },
+  { to: '/users', label: 'User Management', icon: 'users', adminOnly: true },
 ];
 
 // ─────────────────────────── Sidebar ─────────────────────────────
@@ -29,7 +30,7 @@ function Sidebar({ user, onLogout, openAlerts }) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2.5 px-2">
-        {SCREENS.map((s) => (
+        {SCREENS.filter((s) => !s.adminOnly || user?.role === 'admin').map((s) => (
           <NavLink
             key={s.to}
             to={s.to}

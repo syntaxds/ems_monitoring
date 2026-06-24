@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Icon from '../components/ui/Icon';
 import { Field, TextInput, BrandMark } from '../components/ui';
@@ -135,9 +135,9 @@ export default function Login() {
                 </span>
                 <span className="text-ink2">Keep me signed in</span>
               </label>
-              <button type="button" className="text-ink2 hover:text-ink font-medium bg-transparent border-0 p-0">
+              <Link to="/forgot-password" className="text-ink2 hover:text-ink font-medium">
                 Forgot?
-              </button>
+              </Link>
             </div>
 
             <button
