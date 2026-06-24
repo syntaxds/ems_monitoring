@@ -70,4 +70,14 @@ export const acknowledgeAlert = (id) =>
 export const generateReport = (body) =>
   api.post('/api/reports/generate', body, { responseType: 'blob' });
 
+export const getUsers = () => api.get('/api/users');
+export const createUser = (data) => api.post('/api/users', data);
+export const updateUser = (id, data) => api.put(`/api/users/${id}`, data);
+export const deactivateUser = (id) => api.put(`/api/users/${id}/deactivate`);
+export const reactivateUser = (id) => api.put(`/api/users/${id}/reactivate`);
+
+export const forgotPassword = (email) => api.post('/api/auth/forgot-password', { email });
+export const resetPassword = (token, newPassword) =>
+  api.post('/api/auth/reset-password', { token, newPassword });
+
 export default api;

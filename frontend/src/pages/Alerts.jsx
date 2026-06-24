@@ -4,12 +4,15 @@ import socketService from '../services/socket';
 import Icon from '../components/ui/Icon';
 import { PageHeader, Stat, FilterChips, Pill, Dot, EmptyState } from '../components/ui';
 import { riskTok, severityToRisk, fmtRelative, fmtDateTime } from '../lib/format';
+import { useAuth } from '../context/AuthContext';
 
 function notifyAlertsChanged() {
   window.dispatchEvent(new Event('ems:alerts-changed'));
 }
 
 export default function Alerts() {
+  const { user } = useAuth();
+  const canAck = user?.role !== 'viewer';
   const [alerts, setAlerts] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -95,10 +98,12 @@ export default function Alerts() {
           </>
         }
         actions={
-          <button className="btn btn-primary" onClick={ackAll} disabled={filtered.length === 0}>
-            <Icon name="check" size={13} />
-            Ack all
-          </button>
+          canAck && (
+            <button className="btn btn-primary" onClick={ackAll} disabled={filtered.length === 0}>
+              <Icon name="check" size={13} />
+              Ack all
+            </button>
+          )
         }
       />
 
@@ -137,6 +142,7 @@ export default function Alerts() {
                 alert={a}
                 isActive={active?.alert_id === a.alert_id}
                 busy={busyIds.has(a.alert_id)}
+                canAck={canAck}
                 onClick={() => setSelectedId(a.alert_id)}
                 onAck={() => dismiss(a.alert_id)}
               />
@@ -146,7 +152,7 @@ export default function Alerts() {
 
         {/* DETAIL */}
         {active ? (
-          <AlertDetail alert={active} busy={busyIds.has(active.alert_id)} onAck={() => dismiss(active.alert_id)} />
+          <AlertDetail alert={active} busy={busyIds.has(active.alert_id)} canAck={canAck} onAck={() => dismiss(active.alert_id)} />
         ) : (
           <div className="card">
             <EmptyState icon="alert" title="No alert selected" hint="Pick an alert to inspect its details and AI reasoning." />
@@ -157,7 +163,7 @@ export default function Alerts() {
   );
 }
 
-function AlertRow({ alert, isActive, busy, onClick, onAck }) {
+function AlertRow({ alert, isActive, busy, canAck, onClick, onAck }) {
   const risk = severityToRisk(alert.severity);
   const r = riskTok(risk);
   const title = alert.alert_type || alert.alert_message || 'Anomaly detected';
@@ -188,25 +194,27 @@ function AlertRow({ alert, isActive, busy, onClick, onAck }) {
           )}
         </div>
       </div>
-      <div className="shrink-0 self-center">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onAck();
-          }}
-          disabled={busy}
-          className="btn btn-ghost h-7 text-[12px] px-2.5"
-          title="Acknowledge"
-        >
-          <Icon name="check" size={11} />
-          {busy ? '…' : 'Ack'}
-        </button>
-      </div>
+      {canAck && (
+        <div className="shrink-0 self-center">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onAck();
+            }}
+            disabled={busy}
+            className="btn btn-ghost h-7 text-[12px] px-2.5"
+            title="Acknowledge"
+          >
+            <Icon name="check" size={11} />
+            {busy ? '…' : 'Ack'}
+          </button>
+        </div>
+      )}
     </button>
   );
 }
 
-function AlertDetail({ alert, busy, onAck }) {
+function AlertDetail({ alert, busy, canAck, onAck }) {
   const risk = severityToRisk(alert.severity);
   const r = riskTok(risk);
   const title = alert.alert_type || alert.alert_message || 'Anomaly detected';
@@ -240,12 +248,14 @@ function AlertDetail({ alert, busy, onAck }) {
               </span>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <button onClick={onAck} disabled={busy} className="btn btn-primary">
-              <Icon name="check" size={13} />
-              {busy ? 'Acknowledging…' : 'Acknowledge'}
-            </button>
-          </div>
+          {canAck && (
+            <div className="flex flex-col items-end gap-2 shrink-0">
+              <button onClick={onAck} disabled={busy} className="btn btn-primary">
+                <Icon name="check" size={13} />
+                {busy ? 'Acknowledging…' : 'Acknowledge'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

@@ -39,7 +39,7 @@ router.get('/', requireAuth, async (req, res, next) => {
  * PUT /api/alerts/:id/acknowledge
  * Admin/Supervisor only. Marks an alert acknowledged and writes an audit row.
  */
-router.put('/:id/acknowledge', requireRole('admin', 'supervisor'), async (req, res, next) => {
+router.put('/:id/acknowledge', requireRole('admin', 'operator'), async (req, res, next) => {
   try {
     const result = await db.query(
       `UPDATE alerts SET status = 'acknowledged'
