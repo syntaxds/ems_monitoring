@@ -238,44 +238,46 @@ export default function ExportData() {
             {recent.length === 0 ? (
               <div className="py-8 text-center text-ink3 text-[13px]">No exports yet — your downloads will appear here.</div>
             ) : (
-              <table className="t">
-                <thead>
-                  <tr>
-                    <th>File</th>
-                    <th>Format</th>
-                    <th>Range</th>
-                    <th>Devices</th>
-                    <th>When</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recent.map((r, i) => (
-                    <tr key={i}>
-                      <td>
-                        <span className="mono text-[12px]">{r.file}</span>
-                      </td>
-                      <td className="text-[12.5px] text-ink2">{r.format}</td>
-                      <td className="mono text-[12px] text-ink2">{r.range}</td>
-                      <td className="mono tnum text-ink2">{r.rows}</td>
-                      <td className="text-ink3 text-[12.5px]">{fmtRelative(r.when)}</td>
-                      <td className="text-right">
-                        <button
-                          className="btn btn-ghost h-7 text-[12px] px-2"
-                          disabled={exporting !== ''}
-                          onClick={() => {
-                            const [rf, rt] = r.range.split(' → ');
-                            doExport(r.format.toLowerCase(), { from: rf, to: rt });
-                          }}
-                        >
-                          <Icon name="download" size={11} />
-                          Re-pull
-                        </button>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="t">
+                  <thead>
+                    <tr>
+                      <th>File</th>
+                      <th>Format</th>
+                      <th>Range</th>
+                      <th>Devices</th>
+                      <th>When</th>
+                      <th></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {recent.map((r, i) => (
+                      <tr key={i}>
+                        <td>
+                          <span className="mono text-[12px]">{r.file}</span>
+                        </td>
+                        <td className="text-[12.5px] text-ink2">{r.format}</td>
+                        <td className="mono text-[12px] text-ink2">{r.range}</td>
+                        <td className="mono tnum text-ink2">{r.rows}</td>
+                        <td className="text-ink3 text-[12.5px]">{fmtRelative(r.when)}</td>
+                        <td className="text-right">
+                          <button
+                            className="btn btn-ghost h-7 text-[12px] px-2"
+                            disabled={exporting !== ''}
+                            onClick={() => {
+                              const [rf, rt] = r.range.split(' → ');
+                              doExport(r.format.toLowerCase(), { from: rf, to: rt });
+                            }}
+                          >
+                            <Icon name="download" size={11} />
+                            Re-pull
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

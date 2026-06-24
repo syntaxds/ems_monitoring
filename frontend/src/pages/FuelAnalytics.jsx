@@ -131,9 +131,9 @@ export default function FuelAnalytics() {
       />
 
       {/* Controls */}
-      <div className="card flex items-center gap-4 px-4 py-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] text-ink3">Range</span>
+      <div className="card flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 py-3">
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[12px] text-ink3 shrink-0">Range</span>
           <Segmented
             value={range}
             onChange={setRange}
@@ -146,18 +146,20 @@ export default function FuelAnalytics() {
             ]}
           />
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] text-ink3">Device</span>
-          <SelectInput value={selected} onChange={(e) => setSelected(e.target.value)} style={{ minWidth: 220 }}>
-            {devices.length === 0 && <option value="">No devices</option>}
-            {devices.map((d) => (
-              <option key={d.device_id} value={d.device_id}>
-                {d.device_name} · {d.device_id}
-              </option>
-            ))}
-          </SelectInput>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-[12px] text-ink3 shrink-0">Device</span>
+          <div className="flex-1 min-w-0">
+            <SelectInput value={selected} onChange={(e) => setSelected(e.target.value)}>
+              {devices.length === 0 && <option value="">No devices</option>}
+              {devices.map((d) => (
+                <option key={d.device_id} value={d.device_id}>
+                  {d.device_name} · {d.device_id}
+                </option>
+              ))}
+            </SelectInput>
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="sm:ml-auto flex items-center gap-2 shrink-0">
           <Pill tone="ok">
             <Dot color="var(--success)" size={6} pulse />
             Live

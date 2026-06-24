@@ -68,4 +68,27 @@ const loginRateLimiter = rateLimit({
   }
 });
 
-module.exports = { apiRateLimiter, loginRateLimiter };
+/**
+ * Strict limiter for the forgot-password endpoint. Like the login limiter, only
+ * FAILED attempts count (invalid domain / unknown email return 4xx), so a user
+ * who legitimately requests a reset link is never penalized. After 5 failed
+ * attempts the endpoint locks for 10 minutes — the frontend reads the 429 to
+ * block the page and redirect to root.
+ *
+ *  - keyed by IP only: the error message is intentionally identical whether or
+ *    not the email exists (no enumeration), so there's no per-email key to lean
+ *    on; we bound guessing per source IP instead.
+ */
+const forgotPasswordRateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    console.warn(`[RateLimit] Forgot-password limit hit: ip=${req.ip}`);
+    res.status(429).json({ error: 'Please try again in 10 Minutes' });
+  }
+});
+
+module.exports = { apiRateLimiter, loginRateLimiter, forgotPasswordRateLimiter };

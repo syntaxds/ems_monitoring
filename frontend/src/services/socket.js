@@ -1,7 +1,18 @@
 // Thin wrapper around the native WebSocket with event routing and
 // exponential-backoff reconnection.
 
-const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:3000/ws';
+// Derive the WS URL from the page origin so it works wherever the app is
+// served from (localhost, a LAN IP for mobile testing, or a deployed host).
+// https -> wss, http -> ws. An explicit REACT_APP_WS_URL still wins.
+function defaultWsUrl() {
+  if (typeof window !== 'undefined' && window.location) {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}/ws`;
+  }
+  return 'ws://localhost:3000/ws';
+}
+
+const WS_URL = process.env.REACT_APP_WS_URL || defaultWsUrl();
 
 let socket = null;
 let shouldReconnect = false;
