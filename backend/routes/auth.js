@@ -4,6 +4,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
+const { loginRateLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ async function audit(userId, action, description) {
  * Returns a signed JWT on success. Uses a single generic error for both
  * unknown usernames and bad passwords to avoid user enumeration.
  */
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginRateLimiter, async (req, res, next) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) {

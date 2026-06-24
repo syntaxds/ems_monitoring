@@ -5,23 +5,51 @@ import Icon from '../components/ui/Icon';
 import { PageHeader, Segmented, FilterChips, Pill, Dot, EmptyState, SignalBars } from '../components/ui';
 import { fmtTime, fmtRelative } from '../lib/format';
 
-// Resolve the <img> src for a frame: live streams go through the same-origin
-// backend proxy; stored snapshots load from /media with a cache-bust.
-function frameSrc(deviceId, frame) {
+// A device is "stream-type" when its latest frame URL is an absolute http(s)
+// URL (a live MJPEG camera). Snapshot-type cameras store a /media path and are
+// just a single still image that updates on WebSocket push — cheap, so they
+// render immediately. Live streams are NOT auto-started: opening an MJPEG <img>
+// holds a connection open (browser → backend → camera) for as long as the page
+// is mounted, so we gate them behind an explicit "Start stream" action and tear
+// them down when stopped or when the tile/page unmounts.
+function isStreamFrame(frame) {
+  return !!(frame && frame.image_url && /^https?:\/\//i.test(frame.image_url));
+}
+
+// One-shot snapshot <img> src (cache-busted by timestamp).
+function snapshotSrc(frame) {
   if (!frame || !frame.image_url) return null;
-  const isStream = /^https?:\/\//i.test(frame.image_url);
-  return isStream
-    ? cameraStreamUrl(deviceId)
-    : `${mediaUrl(frame.image_url)}?t=${encodeURIComponent(frame.timestamp || '')}`;
+  return `${mediaUrl(frame.image_url)}?t=${encodeURIComponent(frame.timestamp || '')}`;
 }
 
 export default function Cameras() {
   const [devices, setDevices] = useState([]);
   const [frames, setFrames] = useState({}); // device_id -> { image_url, timestamp }
+  const [streamingIds, setStreamingIds] = useState(() => new Set()); // device_ids actively streaming
   const [layout, setLayout] = useState('grid');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const startStream = useCallback((id) => {
+    setStreamingIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  const stopStream = useCallback((id) => {
+    setStreamingIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const stopAllStreams = useCallback(() => setStreamingIds(new Set()), []);
 
   const loadFrame = useCallback(async (deviceId) => {
     try {
@@ -74,12 +102,15 @@ export default function Cameras() {
     };
   }, [loadAll]);
 
-  const isOnline = (d) => !!(frames[d.device_id] && frames[d.device_id].image_url);
-  const online = devices.filter(isOnline).length;
+  // A device counts as "available" if it has a frame (a stored snapshot or a
+  // configured live stream). Streaming is a separate, user-initiated state.
+  const isAvailable = (d) => !!(frames[d.device_id] && frames[d.device_id].image_url);
+  const available = devices.filter(isAvailable).length;
+  const streamingCount = streamingIds.size;
 
   const filtered = devices.filter((d) => {
-    if (filter === 'online') return isOnline(d);
-    if (filter === 'offline') return !isOnline(d);
+    if (filter === 'online') return isAvailable(d);
+    if (filter === 'offline') return !isAvailable(d);
     if (filter === 'anomaly') return d.status === 'anomaly';
     return true;
   });
@@ -94,16 +125,28 @@ export default function Cameras() {
     <div className="space-y-5">
       <PageHeader
         title="Cameras"
-        subtitle="Latest on-vehicle frame from each device."
+        subtitle="Latest frame per device. Live streams start only when you press play — nothing runs in the background."
         right={
           <>
             <span>
-              {online} / {devices.length} online
+              {available} / {devices.length} available
             </span>
+            {streamingCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-ok">
+                <Dot color="var(--danger)" size={6} pulse />
+                {streamingCount} streaming
+              </span>
+            )}
           </>
         }
         actions={
           <>
+            {streamingCount > 0 && (
+              <button className="btn btn-ghost" onClick={stopAllStreams} title="Stop all live streams">
+                <Icon name="square" size={12} />
+                Stop all
+              </button>
+            )}
             <Segmented
               value={layout}
               onChange={setLayout}
@@ -127,8 +170,8 @@ export default function Cameras() {
           onChange={setFilter}
           options={[
             { value: 'all', label: 'All', count: devices.length },
-            { value: 'online', label: 'Online', count: online },
-            { value: 'offline', label: 'Offline', count: devices.length - online },
+            { value: 'online', label: 'Available', count: available },
+            { value: 'offline', label: 'Offline', count: devices.length - available },
             { value: 'anomaly', label: 'Anomaly', count: devices.filter((d) => d.status === 'anomaly').length },
           ]}
         />
@@ -149,7 +192,15 @@ export default function Cameras() {
       >
         {!loading &&
           filtered.map((d) => (
-            <CameraTile key={d.device_id} device={d} frame={frames[d.device_id]} onOpen={() => setSelected(d)} />
+            <CameraTile
+              key={d.device_id}
+              device={d}
+              frame={frames[d.device_id]}
+              streaming={streamingIds.has(d.device_id)}
+              onStart={() => startStream(d.device_id)}
+              onStop={() => stopStream(d.device_id)}
+              onOpen={() => setSelected(d)}
+            />
           ))}
         {!loading && filtered.length === 0 && (
           <div className="col-span-full card">
@@ -185,11 +236,55 @@ function CameraOffline() {
   );
 }
 
-function CameraFeed({ device, frame }) {
+// Idle poster for a live-stream camera: shows a play button and fetches NOTHING
+// until the user starts it.
+function StreamPoster({ onStart, large }) {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-ink3" style={{ background: '#0a0a0a' }}>
+      <Icon name="camera" size={large ? 30 : 24} />
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onStart();
+        }}
+        className="btn btn-primary h-8 text-[12px] px-3.5"
+      >
+        <Icon name="play" size={12} />
+        Start stream
+      </button>
+      <div className="text-[11px] text-ink3">Live feed is off · no data until you start</div>
+    </div>
+  );
+}
+
+// Renders the actual pixels. `streaming` only matters for live-stream cameras;
+// snapshot cameras always show their latest still.
+function CameraFeed({ device, frame, streaming, onStart, large }) {
   const [imgError, setImgError] = useState(false);
-  const src = frameSrc(device.device_id, frame);
-  const online = !!src && !imgError;
-  if (!online) return <CameraOffline />;
+  const stream = isStreamFrame(frame);
+  const frameUrl = frame && frame.image_url;
+
+  // Reset the error state whenever the source identity changes (toggled stream,
+  // or a fresh snapshot arrived).
+  useEffect(() => {
+    setImgError(false);
+  }, [streaming, stream, frameUrl]);
+
+  if (stream) {
+    if (!streaming) return <StreamPoster onStart={onStart} large={large} />;
+    if (imgError) return <CameraOffline />;
+    return (
+      <img
+        src={cameraStreamUrl(device.device_id)}
+        alt={`${device.device_name} live stream`}
+        className="absolute inset-0 w-full h-full object-cover"
+        onError={() => setImgError(true)}
+      />
+    );
+  }
+
+  const src = snapshotSrc(frame);
+  if (!src || imgError) return <CameraOffline />;
   return (
     <img
       src={src}
@@ -200,30 +295,44 @@ function CameraFeed({ device, frame }) {
   );
 }
 
-function CameraTile({ device, frame, onOpen }) {
-  const online = !!(frame && frame.image_url);
+function CameraTile({ device, frame, streaming, onStart, onStop, onOpen }) {
+  const stream = isStreamFrame(frame);
+  const hasFrame = !!(frame && frame.image_url);
+  const live = stream && streaming;
   const isAnom = device.status === 'anomaly';
+
+  // Top-left status badge reflects the true feed state.
+  let badge;
+  if (live) badge = { label: 'Live', live: true };
+  else if (stream) badge = { label: 'Stream off', live: false };
+  else if (hasFrame) badge = { label: 'Snapshot', live: false };
+  else badge = { label: 'Offline', live: false };
+
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      className="card overflow-hidden text-left group flex flex-col"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onOpen();
+      }}
+      className="card overflow-hidden text-left group flex flex-col cursor-pointer"
       style={{ borderColor: isAnom ? 'color-mix(in oklch, var(--danger) 50%, var(--border))' : 'var(--border)' }}
     >
       <div className="relative aspect-video overflow-hidden" style={{ background: '#0a0a0a' }}>
-        <CameraFeed device={device} frame={frame} />
+        <CameraFeed device={device} frame={frame} streaming={streaming} onStart={onStart} />
 
         {/* Top HUD */}
         <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between text-[11px]">
           <div className="flex items-center gap-1.5">
-            {online ? (
+            {badge.live ? (
               <span className="inline-flex items-center gap-1 px-1.5 h-[20px] rounded-md text-white font-medium" style={{ background: 'rgba(0,0,0,0.55)' }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-bad pulse" />
                 Live
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 px-1.5 h-[20px] rounded-md text-white/70 font-medium" style={{ background: 'rgba(0,0,0,0.55)' }}>
-                <Icon name="wifiOff" size={10} />
-                Offline
+                {badge.label}
               </span>
             )}
             {isAnom && (
@@ -232,17 +341,28 @@ function CameraTile({ device, frame, onOpen }) {
               </span>
             )}
           </div>
-          {frame?.timestamp && (
-            <span className="text-white/85 px-1.5 h-[20px] inline-flex items-center rounded-md mono tnum" style={{ background: 'rgba(0,0,0,0.45)' }}>
-              {fmtTime(frame.timestamp)}
-            </span>
-          )}
-        </div>
-
-        <div className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition-opacity translate-y-7">
-          <span className="w-7 h-7 rounded-md text-white flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.55)' }}>
-            <Icon name="expand" size={12} />
-          </span>
+          <div className="flex items-center gap-1.5">
+            {/* Stop control is always visible while streaming so it's discoverable. */}
+            {live && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStop();
+                }}
+                className="inline-flex items-center gap-1 px-1.5 h-[20px] rounded-md text-white font-medium hover:bg-black/70"
+                style={{ background: 'rgba(0,0,0,0.55)' }}
+                title="Stop stream"
+              >
+                <Icon name="square" size={10} />
+                Stop
+              </button>
+            )}
+            {frame?.timestamp && !live && (
+              <span className="text-white/85 px-1.5 h-[20px] inline-flex items-center rounded-md mono tnum" style={{ background: 'rgba(0,0,0,0.45)' }}>
+                {fmtTime(frame.timestamp)}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -258,16 +378,21 @@ function CameraTile({ device, frame, onOpen }) {
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-2 text-ink3">
-          {device.signal != null && <SignalBars value={online ? device.signal : 0} />}
+          {device.signal != null && <SignalBars value={live ? device.signal : 0} />}
           <span className="text-[11px]">{frame?.timestamp ? fmtRelative(frame.timestamp) : '—'}</span>
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
 function CameraModal({ device, frame, onClose, onPrev, onNext }) {
-  const online = !!(frame && frame.image_url);
+  const stream = isStreamFrame(frame);
+  // Opening the modal IS the explicit "watch" action, so a live stream auto-starts
+  // here and is torn down the moment the modal closes (the <img> unmounts).
+  const [streaming, setStreaming] = useState(stream);
+  const live = stream && streaming;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
       <div className="card max-w-5xl w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -279,6 +404,16 @@ function CameraModal({ device, frame, onClose, onPrev, onNext }) {
             {device.status === 'anomaly' && <Pill tone="bad">Anomaly</Pill>}
           </div>
           <div className="flex items-center gap-1.5">
+            {stream && (
+              <button
+                className="btn btn-ghost h-8 text-[12px] px-2.5"
+                onClick={() => setStreaming((s) => !s)}
+                title={streaming ? 'Stop stream' : 'Start stream'}
+              >
+                <Icon name={streaming ? 'square' : 'play'} size={12} />
+                {streaming ? 'Stop' : 'Stream'}
+              </button>
+            )}
             <button className="btn btn-icon btn-ghost" onClick={onPrev}>
               <Icon name="chevronLeft" size={13} />
             </button>
@@ -291,17 +426,16 @@ function CameraModal({ device, frame, onClose, onPrev, onNext }) {
           </div>
         </div>
         <div className="relative aspect-video bg-black">
-          <CameraFeed device={device} frame={frame} />
+          <CameraFeed device={device} frame={frame} streaming={streaming} onStart={() => setStreaming(true)} large />
           <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[11px] text-white/85">
-            {online ? (
+            {live ? (
               <span className="px-2 h-[22px] rounded-md inline-flex items-center gap-1.5 font-medium" style={{ background: 'rgba(0,0,0,0.55)' }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-bad pulse" />
                 Live
               </span>
             ) : (
               <span className="px-2 h-[22px] rounded-md inline-flex items-center gap-1.5 font-medium" style={{ background: 'rgba(0,0,0,0.55)' }}>
-                <Icon name="wifiOff" size={11} />
-                Offline
+                {stream ? 'Stream off' : frame?.image_url ? 'Snapshot' : 'Offline'}
               </span>
             )}
             {frame?.timestamp && (
