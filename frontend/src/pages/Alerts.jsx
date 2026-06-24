@@ -17,6 +17,7 @@ export default function Alerts() {
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
+  const [showDetail, setShowDetail] = useState(false);
   const [busyIds, setBusyIds] = useState(() => new Set());
 
   useEffect(() => {
@@ -116,8 +117,8 @@ export default function Alerts() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.05fr] gap-5">
-        {/* LIST */}
-        <div className="card overflow-hidden flex flex-col">
+        {/* LIST — hidden on mobile when detail is open */}
+        <div className={`card overflow-hidden flex flex-col ${showDetail ? 'hidden xl:flex' : 'flex'}`}>
           <div className="px-4 py-3 border-b border-line">
             <FilterChips
               value={filter}
@@ -143,21 +144,31 @@ export default function Alerts() {
                 isActive={active?.alert_id === a.alert_id}
                 busy={busyIds.has(a.alert_id)}
                 canAck={canAck}
-                onClick={() => setSelectedId(a.alert_id)}
+                onClick={() => { setSelectedId(a.alert_id); setShowDetail(true); }}
                 onAck={() => dismiss(a.alert_id)}
               />
             ))}
           </div>
         </div>
 
-        {/* DETAIL */}
-        {active ? (
-          <AlertDetail alert={active} busy={busyIds.has(active.alert_id)} canAck={canAck} onAck={() => dismiss(active.alert_id)} />
-        ) : (
-          <div className="card">
-            <EmptyState icon="alert" title="No alert selected" hint="Pick an alert to inspect its details and AI reasoning." />
-          </div>
-        )}
+        {/* DETAIL — full width on mobile when shown, always visible on xl+ */}
+        <div className={showDetail ? 'block' : 'hidden xl:block'}>
+          {/* Back button — mobile only */}
+          <button
+            className="xl:hidden mb-3 btn btn-ghost"
+            onClick={() => setShowDetail(false)}
+          >
+            <Icon name="chevronLeft" size={13} />
+            Back to list
+          </button>
+          {active ? (
+            <AlertDetail alert={active} busy={busyIds.has(active.alert_id)} canAck={canAck} onAck={() => dismiss(active.alert_id)} />
+          ) : (
+            <div className="card">
+              <EmptyState icon="alert" title="No alert selected" hint="Pick an alert to inspect its details and AI reasoning." />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

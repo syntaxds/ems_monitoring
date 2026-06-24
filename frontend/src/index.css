@@ -329,6 +329,13 @@ table.t tr:hover td {
   animation: p 2s ease-in-out infinite;
 }
 
+/* ───── Sidebar drawer — always visible on lg+, overrides inline transform ───── */
+@media (min-width: 1024px) {
+  .sidebar-drawer {
+    transform: translateX(0) !important;
+  }
+}
+
 /* ───── Leaflet — keep the existing map, themed to the token palette ───── */
 .leaflet-container {
   height: 100%;

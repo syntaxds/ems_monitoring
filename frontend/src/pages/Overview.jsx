@@ -145,7 +145,7 @@ export default function Overview() {
               </>
             }
           />
-          <div style={{ height: 540 }}>
+          <div className="h-48 sm:h-64 lg:h-[540px]">
             <MapView devices={devices} focusId={focusId} onMarkerClick={setFocus} />
           </div>
         </div>
