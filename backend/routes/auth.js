@@ -5,7 +5,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-const { loginRateLimiter } = require('../middleware/rateLimit');
+const { loginRateLimiter, forgotPasswordRateLimiter } = require('../middleware/rateLimit');
 const { sendPasswordResetEmail } = require('../services/emailService');
 
 const router = express.Router();
@@ -71,10 +71,13 @@ router.post('/login', loginRateLimiter, async (req, res, next) => {
  * Always returns the same message regardless of whether the email exists
  * to prevent account enumeration.
  */
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', forgotPasswordRateLimiter, async (req, res) => {
   const { email } = req.body || {};
   if (!email) {
     return res.status(400).json({ error: 'Email is required' });
+  }
+  if (!/@pmjsystem\.com$/i.test(String(email).trim())) {
+    return res.status(400).json({ error: 'Please check your email again' });
   }
 
   const genericResponse = { message: 'If that email is registered, a reset link has been sent.' };
@@ -86,7 +89,7 @@ router.post('/forgot-password', async (req, res) => {
     );
 
     if (result.rows.length === 0 || result.rows[0].active === false) {
-      return res.json(genericResponse);
+      return res.status(400).json({ error: 'Please check your email again' });
     }
 
     const user = result.rows[0];

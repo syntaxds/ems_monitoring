@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { forgotPassword } from '../services/api';
 import Icon from '../components/ui/Icon';
 import { Field, TextInput, BrandMark } from '../components/ui';
@@ -7,27 +7,45 @@ import heroImg from '../assets/login-hero.jpg';
 import logoImg from '../assets/logo.png';
 
 export default function ForgotPassword() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState('');
+  const [locked, setLocked] = useState(false);
+
+  // Too many failed attempts (HTTP 429): lock the page and bounce to root.
+  useEffect(() => {
+    if (!locked) return;
+    const t = setTimeout(() => navigate('/'), 5000);
+    return () => clearTimeout(t);
+  }, [locked, navigate]);
 
   const submit = async (e) => {
     e.preventDefault();
+    if (locked) return;
     setErr('');
     if (!email) {
       setErr('Enter your email address to continue.');
       return;
     }
+    if (!/@pmjsystem\.com$/i.test(email.trim())) {
+      setErr('Please check your email again');
+      return;
+    }
     setBusy(true);
     try {
       await forgotPassword(email);
+      setDone(true);
     } catch (e2) {
-      // Intentionally swallow — we always show the generic success message
-      // to avoid leaking whether the email is registered.
+      if (e2?.response?.status === 429) {
+        setErr(e2?.response?.data?.error || 'Please try again in 10 Minutes');
+        setLocked(true);
+      } else {
+        setErr(e2?.response?.data?.error || 'Please check your email again');
+      }
     } finally {
       setBusy(false);
-      setDone(true);
     }
   };
 
@@ -109,7 +127,7 @@ export default function ForgotPassword() {
 
                 <button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || locked}
                   className="btn btn-primary w-full justify-center h-11 text-[14px] font-medium mt-2"
                 >
                   {busy ? (
