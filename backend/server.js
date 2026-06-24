@@ -18,6 +18,7 @@ const deviceRoutes = require('./routes/devices');
 const alertRoutes = require('./routes/alerts');
 const reportRoutes = require('./routes/reports');
 const internalRoutes = require('./routes/internal');
+const userRoutes = require('./routes/users');
 
 const mqttService = require('./services/mqttService');
 const wsService = require('./services/wsService');
@@ -75,6 +76,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/users', userRoutes);
 app.use('/internal', internalRoutes);
 
 // --- Optional single-origin production hosting ---

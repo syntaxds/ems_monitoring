@@ -10,6 +10,9 @@ import FuelAnalytics from './pages/FuelAnalytics';
 import Alerts from './pages/Alerts';
 import ExportData from './pages/ExportData';
 import Cameras from './pages/Cameras';
+import UserManagement from './pages/UserManagement';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 // Layout wrapper: sidebar + topbar shell around private pages.
 function PrivateLayout({ children }) {
@@ -23,6 +26,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           <Route
             path="/overview"
@@ -70,6 +75,16 @@ export default function App() {
               <PrivateRoute>
                 <PrivateLayout>
                   <ExportData />
+                </PrivateLayout>
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              <PrivateRoute>
+                <PrivateLayout>
+                  <UserManagement />
                 </PrivateLayout>
               </PrivateRoute>
             }
