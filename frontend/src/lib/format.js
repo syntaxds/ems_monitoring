@@ -7,7 +7,12 @@ function pad2(n) {
 
 function toMs(ts) {
   if (ts == null) return null;
-  const ms = typeof ts === 'number' ? ts : new Date(ts).getTime();
+  if (typeof ts === 'number') return Number.isNaN(ts) ? null : ts;
+  // Strings without a timezone indicator are UTC in this system — append Z so
+  // the browser doesn't misread them as local time (which would shift by +7h).
+  const s = ts.trim().replace(' ', 'T');
+  const normalized = /Z$|[+-]\d{2}:\d{2}$/.test(s) ? s : s + 'Z';
+  const ms = new Date(normalized).getTime();
   return Number.isNaN(ms) ? null : ms;
 }
 

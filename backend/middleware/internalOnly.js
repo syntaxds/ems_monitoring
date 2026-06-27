@@ -8,7 +8,7 @@
 function internalOnly(req, res, next) {
   const ip = req.ip || req.connection?.remoteAddress || '';
   const normalized = ip.replace('::ffff:', '');
-  const allowed = ['127.0.0.1', '192.168.2.107', '::1', 'localhost'];
+  const allowed = ['127.0.0.1', '::1', 'localhost'];
   if (allowed.includes(normalized) || allowed.includes(ip)) {
     return next();
   }

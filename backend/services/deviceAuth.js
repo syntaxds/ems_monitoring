@@ -2,11 +2,26 @@
 
 const db = require('../db');
 
+// Throttle DEVICE_REJECTED audit rows. A misconfigured/malicious device can
+// publish every ~15s with a bad token; without this, each rejection writes an
+// audit row and the table grows unbounded. We persist at most one row per
+// (device + reason) per window, while still console-warning every time.
+const REJECTION_LOG_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const lastRejectionLog = new Map(); // `${deviceId}:${reason}` -> epoch ms
+
 /**
  * Record a rejected device attempt in the audit log. Best-effort — a logging
- * failure must never break the caller.
+ * failure must never break the caller. Throttled per (device, reason).
  */
 async function logRejection(deviceId, reason) {
+  const key = `${deviceId}:${reason}`;
+  const now = Date.now();
+  const last = lastRejectionLog.get(key) || 0;
+  if (now - last < REJECTION_LOG_WINDOW_MS) {
+    return; // within the throttle window — skip the audit write
+  }
+  lastRejectionLog.set(key, now);
+
   try {
     await db.query(
       'INSERT INTO audit_log (action, description) VALUES ($1, $2)',

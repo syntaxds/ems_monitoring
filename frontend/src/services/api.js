@@ -53,6 +53,9 @@ export const getDeviceGPS = (id, start, end) =>
 export const getDeviceCameraLatest = (id) =>
   api.get(`/api/devices/${id}/camera/latest`);
 
+export const controlDeviceCamera = (id, action) =>
+  api.post(`/api/devices/${id}/camera/control`, { action });
+
 // Backend-proxied live MJPEG stream URL for an <img src>. Same-origin (avoids
 // CORS/CSP), and the backend keeps a single upstream connection to the camera.
 // Token goes in the query because an <img> can't send an Authorization header.
@@ -66,6 +69,15 @@ export const getAlerts = (status, deviceId) =>
 
 export const acknowledgeAlert = (id) =>
   api.put(`/api/alerts/${id}/acknowledge`);
+
+// Acknowledge every active alert in one request, optionally scoped to a device
+// and/or a single severity ('high' | 'medium' | 'low').
+export const acknowledgeAllAlerts = ({ deviceId, severity } = {}) => {
+  const body = {};
+  if (deviceId) body.device_id = deviceId;
+  if (severity) body.severity = severity;
+  return api.put('/api/alerts/acknowledge-all', body);
+};
 
 export const generateReport = (body) =>
   api.post('/api/reports/generate', body, { responseType: 'blob' });

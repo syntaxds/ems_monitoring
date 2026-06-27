@@ -97,7 +97,7 @@ export function Sparkline({ data, color = 'var(--accent)', width = 220, height =
 }
 
 // ── FuelBar — slim, single-track ─────────────────────────────────
-export function FuelBar({ level, capacity = 600, height = 6 }) {
+export function FuelBar({ level, capacity = 249.75, height = 6 }) {
   const pct = Math.max(0, Math.min(100, (level / capacity) * 100));
   const tok = fuelTok(pct);
   return (

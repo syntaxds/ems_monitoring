@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { getDevices, getDeviceFuel } from '../services/api';
+import socketService from '../services/socket';
 import Icon from '../components/ui/Icon';
 import { PageHeader, Stat, Segmented, SelectInput, SectionTitle, Pill, Dot } from '../components/ui';
 import { fmtTime, fmtDateTime } from '../lib/format';
 
-const TANK_CAPACITY_L = 600;
+const TANK_CAPACITY_L = 249.75;
 
 const RANGES = {
   '6h': 6 * 60 * 60 * 1000,
@@ -87,6 +88,24 @@ export default function FuelAnalytics() {
     if (selected) fetchFuel(selected, range);
   }, [selected, range, fetchFuel]);
 
+  // Re-fetch when new telemetry arrives for the selected device so chart
+  // updates without manual refresh. Debounced 1s to batch rapid messages.
+  useEffect(() => {
+    if (!selected) return;
+    let timer = null;
+    const onFuel = (data) => {
+      if (data.device_id !== selected) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => fetchFuel(selected, range), 1000);
+    };
+    socketService.connect();
+    socketService.on('fuel_update', onFuel);
+    return () => {
+      socketService.off('fuel_update', onFuel);
+      clearTimeout(timer);
+    };
+  }, [selected, range, fetchFuel]);
+
   const points = useMemo(
     () =>
       [...rows]
@@ -98,15 +117,23 @@ export default function FuelAnalytics() {
   const metrics = useMemo(() => {
     if (points.length === 0) return { current: null, burned: null, burnRate: null, refuels: 0 };
     const current = points[points.length - 1].v;
-    const burned = Math.max(0, points[0].v - current);
-    const runningSamples = points.filter((p) => p.engine === 'running').length;
-    const runningHours = (runningSamples * 5) / 60; // 5-min cadence
-    const burnRate = runningHours > 0 ? burned / runningHours : 0;
+    // Accumulate genuine per-step drops instead of first→last net change.
+    // first→last gives 0 whenever fuel has a net rise (EMA settling, refuel),
+    // even if real consumption happened in between.
+    let consumed = 0;
+    let runningMs = 0;
     let refuels = 0;
-    for (let i = 1; i < points.length; i++) if (points[i].v - points[i - 1].v > 30) refuels++;
+    for (let i = 1; i < points.length; i++) {
+      const delta = points[i].v - points[i - 1].v;
+      if (points[i - 1].engine === 'running') runningMs += points[i].t - points[i - 1].t;
+      if (delta < 0) consumed += -delta;
+      else if (delta > 30) refuels++;
+    }
+    const runningHours = runningMs / 3600000;
+    const burnRate = runningHours > 0 ? consumed / runningHours : 0;
     return {
       current,
-      burned: Number(burned.toFixed(1)),
+      burned: Number(consumed.toFixed(1)),
       burnRate: Number(burnRate.toFixed(1)),
       refuels,
     };
@@ -160,9 +187,9 @@ export default function FuelAnalytics() {
           </div>
         </div>
         <div className="sm:ml-auto flex items-center gap-2 shrink-0">
-          <Pill tone="ok">
-            <Dot color="var(--success)" size={6} pulse />
-            Live
+          <Pill tone="neutral">
+            <Dot color="var(--text-3)" size={6} />
+            Snapshot
           </Pill>
         </div>
       </div>
@@ -347,6 +374,7 @@ function FuelChart({ points, hover, setHover }) {
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
         className="w-full h-[320px]"
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
@@ -390,24 +418,31 @@ function FuelChart({ points, hover, setHover }) {
         )}
       </svg>
 
-      {hover && (
-        <div
-          className="absolute pointer-events-none card px-3 py-2 text-[12px]"
-          style={{
-            boxShadow: 'var(--shadow)',
-            left: `calc(${(hover.x / W) * 100}% + 12px)`,
-            top: `calc(${(hover.y / H) * 100}% - 14px)`,
-            transform: 'translateY(-100%)',
-            minWidth: 140,
-          }}
-        >
-          <div className="text-[11px] text-ink3">{fmtDateTime(hover.t)}</div>
-          <div className="text-[16px] font-semibold tnum mt-0.5">
-            {hover.v.toFixed(1)}
-            <span className="text-ink3 text-[11px] font-normal ml-1">L</span>
+      {hover && (() => {
+        const flipX = hover.x / W > 0.65;
+        const flipY = hover.y / H < 0.35;
+        return (
+          <div
+            className="absolute pointer-events-none card px-3 py-2 text-[12px]"
+            style={{
+              boxShadow: 'var(--shadow)',
+              ...(flipX
+                ? { right: `calc(${(1 - hover.x / W) * 100}% + 12px)` }
+                : { left: `calc(${(hover.x / W) * 100}% + 12px)` }),
+              ...(flipY
+                ? { top: `calc(${(hover.y / H) * 100}% + 10px)` }
+                : { top: `calc(${(hover.y / H) * 100}% - 14px)`, transform: 'translateY(-100%)' }),
+              minWidth: 140,
+            }}
+          >
+            <div className="text-[11px] text-ink3">{fmtDateTime(hover.t)}</div>
+            <div className="text-[16px] font-semibold tnum mt-0.5">
+              {hover.v.toFixed(1)}
+              <span className="text-ink3 text-[11px] font-normal ml-1">L</span>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
