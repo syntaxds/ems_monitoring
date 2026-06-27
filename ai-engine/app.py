@@ -1,21 +1,15 @@
 import os
 from datetime import datetime
-
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
-
-from services.anomaly_service import (
-    analyze_fuel,
-    get_metrics
-)
-
-from model.isolation_forest import retrain_model
+from services.anomaly_service import (analyze_fuel,get_metrics)
+from model.isolation_forest import (retrain_model,MODEL_VERSION)
 
 load_dotenv()
 
 app = Flask(__name__)
 
-AI_VERSION = "1.1.0"
+AI_VERSION = MODEL_VERSION
 AI_API_KEY = os.getenv("AI_API_KEY", "")
 
 
@@ -109,7 +103,7 @@ def analyze():
         device_id = req.get("device_id")
         fuel_level = req.get("fuel_level")
         voltage = req.get("voltage", 12.4)
-        engine_status = req.get("engine_status", "ON")
+        engine_status = str(req.get("engine_status", "running" )).lower()
 
         if device_id is None:
             return error_response("device_id is required")
@@ -174,10 +168,7 @@ def analyze_batch():
                 device_id = device.get("device_id")
                 fuel_level = float(device.get("fuel_level", 0))
                 voltage = float(device.get("voltage", 12.4))
-                engine_status = device.get(
-                    "engine_status",
-                    "ON"
-                )
+                engine_status = str(device.get("engine_status","running" )).lower()
 
                 result = analyze_fuel(
                     device_id,
