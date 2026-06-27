@@ -7,8 +7,10 @@ from datetime import datetime
 from sklearn.ensemble import IsolationForest
 
 MODEL_DIR = "model"
-MODEL_VERSION = "1.1.0"
+MODEL_VERSION = "1.2.0"
+
 TRAINING_DATA_PATH = "data/training_data.csv"
+
 LATEST_MODEL_PATH = os.path.join(
     MODEL_DIR,
     "model.pkl"
@@ -28,13 +30,25 @@ def load_training_data():
 
         df = pd.read_csv(TRAINING_DATA_PATH)
 
+        required_columns = [
+            "fuel_level",
+            "voltage"
+        ]
+
+        if not all(col in df.columns for col in required_columns):
+            raise ValueError(
+                f"training_data.csv harus memiliki kolom {required_columns}"
+            )
+
         return df[
-            ["fuel_level", "voltage"]
+            required_columns
         ].values
 
+    # fallback training data
     return np.array([
         [50, 12.4],
-        [52, 12.5]
+        [52, 12.5],
+        [48, 12.3]
     ])
 
 
@@ -43,7 +57,7 @@ def create_model():
     training_data = load_training_data()
 
     model = IsolationForest(
-        contamination=0.1,
+        contamination=0.02,      
         random_state=42,
         n_estimators=100
     )
@@ -107,10 +121,6 @@ def predict_telemetry(
         features
     )[0]
 
-    # INVERTED NORMALIZED SCORE
-    # 1.0 = normal
-    # 0.0 = anomaly
-
     normalized_score = round(
         max(0, min(1, raw_score + 0.5)),
         3
@@ -150,7 +160,7 @@ def retrain_model(new_data):
             }
 
         model = IsolationForest(
-            contamination=0.1,
+            contamination=0.02,      
             random_state=42,
             n_estimators=100
         )

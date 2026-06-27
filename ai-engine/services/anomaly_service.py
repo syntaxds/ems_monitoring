@@ -11,6 +11,7 @@ from model.isolation_forest import predict_telemetry
 LOW_FUEL_THRESHOLD = 10
 LOW_VOLTAGE_THRESHOLD = 11.5
 MAX_HISTORY = 10
+MAX_FUEL_LEVEL = 250
 
 
 fuel_history = {}
@@ -110,7 +111,7 @@ def analyze_fuel(
 
     # RULE-BASED HIGH PRIORITY CHECKS
 
-    if fuel > 100:
+    if fuel < 0 or fuel > MAX_FUEL_LEVEL:
 
         is_anomaly = True
         reason = "Invalid fuel level (sensor error)"
@@ -120,11 +121,11 @@ def analyze_fuel(
 
     elif fuel < LOW_FUEL_THRESHOLD:
 
-        is_anomaly = True
-        reason = "Fuel level below safe threshold"
-        risk = "HIGH"
-        severity_code = 3
-        anomaly_type = "low_fuel"
+        is_anomaly = False
+        reason = "Low fuel level"
+        risk = "LOW"
+        severity_code = 1
+        anomaly_type = "normal"
 
     elif voltage < LOW_VOLTAGE_THRESHOLD:
 
@@ -134,7 +135,7 @@ def analyze_fuel(
         severity_code = 2
         anomaly_type = "low_voltage"
 
-    elif engine_status == "OFF" and len(history) >= 2:
+    elif engine_status == "off" and len(history) >= 2:
 
         previous_fuel = history[-2]
 
@@ -170,18 +171,6 @@ def analyze_fuel(
             risk = "MEDIUM"
             severity_code = 2
             anomaly_type = "fuel_drop"
-
-    if not is_anomaly and len(history) >= 5:
-
-        trend = np.diff(history)
-
-        if all(t < 0 for t in trend[-3:]):
-
-            is_anomaly = True
-            reason = "Consistent decreasing pattern detected"
-            risk = "MEDIUM"
-            severity_code = 2
-            anomaly_type = "decreasing_trend"
 
     # ML FALLBACK
 
