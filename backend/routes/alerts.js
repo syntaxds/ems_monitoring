@@ -36,8 +36,48 @@ router.get('/', requireAuth, async (req, res, next) => {
 });
 
 /**
+ * PUT /api/alerts/acknowledge-all
+ * Admin/Operator only. Acknowledges every active alert in a single UPDATE
+ * (optionally scoped to one device via body.device_id). This exists so the
+ * dashboard's "Ack all" never fans out into one HTTP request per alert — a
+ * backlog of hundreds of alerts previously tripped the API rate limiter.
+ */
+router.put('/acknowledge-all', requireRole('admin', 'operator'), async (req, res, next) => {
+  try {
+    const deviceId = (req.body && req.body.device_id) || null;
+    let severity = (req.body && req.body.severity) || null;
+    if (severity !== null && !['high', 'medium', 'low'].includes(severity)) {
+      return res.status(400).json({ error: "severity must be 'high', 'medium', or 'low'" });
+    }
+
+    const result = await db.query(
+      `UPDATE alerts SET status = 'acknowledged'
+       WHERE status = 'active'
+         AND ($1::varchar IS NULL OR device_id = $1)
+         AND ($2::varchar IS NULL OR severity = $2)
+       RETURNING alert_id`,
+      [deviceId, severity]
+    );
+
+    const count = result.rowCount;
+    await db.query(
+      'INSERT INTO audit_log (user_id, action, description) VALUES ($1, $2, $3)',
+      [
+        req.user.user_id,
+        'ALERT_ACKNOWLEDGED_ALL',
+        `${count} alert(s)${deviceId ? ` on device ${deviceId}` : ''} acknowledged by ${req.user.username}`
+      ]
+    );
+
+    return res.json({ status: 'ACKNOWLEDGED', count });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
  * PUT /api/alerts/:id/acknowledge
- * Admin/Supervisor only. Marks an alert acknowledged and writes an audit row.
+ * Admin/Operator only. Marks an alert acknowledged and writes an audit row.
  */
 router.put('/:id/acknowledge', requireRole('admin', 'operator'), async (req, res, next) => {
   try {

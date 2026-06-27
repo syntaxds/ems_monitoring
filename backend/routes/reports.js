@@ -24,9 +24,13 @@ router.post('/generate', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: "format must be 'csv' or 'pdf'" });
     }
 
-    const start = new Date(start_date).toISOString();
-    // Include the whole end day.
+    const startDate = new Date(start_date);
     const endDay = new Date(end_date);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDay.getTime())) {
+      return res.status(400).json({ error: 'start_date and end_date must be valid dates' });
+    }
+    const start = startDate.toISOString();
+    // Include the whole end day.
     endDay.setHours(23, 59, 59, 999);
     const end = endDay.toISOString();
 

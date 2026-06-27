@@ -21,12 +21,15 @@ router.get('/ai/health', async (req, res) => {
 /**
  * POST /internal/ai/analyze
  * Internal single-device analysis proxy. The frontend must never call this.
+ * The AI engine expects fuel as a percentage (0-100); prefer fuel_pct when the
+ * caller supplies it, falling back to fuel_level for backward compatibility.
  */
 router.post('/ai/analyze', async (req, res) => {
-  const { device_id, fuel_level, timestamp } = req.body || {};
+  const { device_id, fuel_level, fuel_pct, timestamp } = req.body || {};
+  const fuelForAi = fuel_pct != null ? fuel_pct : fuel_level;
   const result = await aiService.analyze(
     device_id,
-    fuel_level,
+    fuelForAi,
     timestamp || new Date().toISOString()
   );
   res.json(result);

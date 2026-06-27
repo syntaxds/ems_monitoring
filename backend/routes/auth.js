@@ -82,6 +82,11 @@ router.post('/forgot-password', forgotPasswordRateLimiter, async (req, res) => {
 
   const genericResponse = { message: 'If that email is registered, a reset link has been sent.' };
 
+  // Opportunistic housekeeping: purge used/expired tokens so the table can't
+  // grow unbounded. Best-effort — never blocks or fails the request.
+  db.query('DELETE FROM password_reset_tokens WHERE used = true OR expires_at < NOW()')
+    .catch((err) => console.error(`[Auth] reset-token cleanup failed: ${err.message}`));
+
   try {
     const result = await db.query(
       'SELECT user_id, active FROM users WHERE email = $1',

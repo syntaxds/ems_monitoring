@@ -2,7 +2,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// pg parses TIMESTAMP WITHOUT TIME ZONE (OID 1114) using new Date(str) which
+// treats the string as LOCAL time on Windows. All timestamps in this system
+// are stored as UTC, so force UTC parsing by appending Z before constructing
+// the Date — this fixes 7-hour offsets in JSON API responses on WIB machines.
+types.setTypeParser(1114, (val) => (val ? new Date(val + 'Z') : null));
 
 /**
  * PostgreSQL connection pool. All queries in the application MUST go through
