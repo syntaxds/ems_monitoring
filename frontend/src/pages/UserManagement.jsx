@@ -40,6 +40,10 @@ function UserModal({ initial, onClose, onSaved }) {
       setErr('Username and password are required.');
       return;
     }
+    if (!isEdit && form.password.length < 8) {
+      setErr('Password must be at least 8 characters.');
+      return;
+    }
     setBusy(true);
     try {
       if (isEdit) {

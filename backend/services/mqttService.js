@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const mqtt = require('mqtt');
 const db = require('../db');
 const aiService = require('./aiService');
@@ -8,8 +11,9 @@ const { validateDevice } = require('./deviceAuth');
 
 const TELEMETRY_TOPIC = 'device/+/telemetry';
 const STATUS_TOPIC = 'device/+/status';
-const MAX_RETRIES = 5;
+const CAMERA_TOPIC = 'device/+/camera';
 const BASE_BACKOFF_MS = 2000;
+const MAX_BACKOFF_MS = 60000; // cap the exponential backoff; never stop retrying
 
 let client = null;
 let retryCount = 0;
@@ -60,11 +64,11 @@ function init() {
   client.on('connect', () => {
     retryCount = 0;
     console.log('[MQTT] Connected to broker');
-    client.subscribe([TELEMETRY_TOPIC, STATUS_TOPIC], { qos: 1 }, (err) => {
+    client.subscribe([TELEMETRY_TOPIC, STATUS_TOPIC, CAMERA_TOPIC], { qos: 1 }, (err) => {
       if (err) {
         console.error(`[MQTT] Subscription failed: ${err.message}`);
       } else {
-        console.log(`[MQTT] Subscribed to ${TELEMETRY_TOPIC} and ${STATUS_TOPIC}`);
+        console.log(`[MQTT] Subscribed to ${TELEMETRY_TOPIC}, ${STATUS_TOPIC} and ${CAMERA_TOPIC}`);
       }
     });
   });
@@ -87,13 +91,12 @@ function init() {
 
 function scheduleReconnect() {
   if (reconnectTimer) return;
-  if (retryCount >= MAX_RETRIES) {
-    console.error(`[MQTT] Max reconnect attempts (${MAX_RETRIES}) reached — giving up until restart.`);
-    return;
-  }
-  const delay = BASE_BACKOFF_MS * Math.pow(2, retryCount);
+  // Cap the backoff but never give up — telemetry ingestion must self-heal after
+  // a broker/network outage without a manual process restart. retryCount resets
+  // to 0 in the 'connect' handler once a stable connection is re-established.
+  const delay = Math.min(BASE_BACKOFF_MS * Math.pow(2, retryCount), MAX_BACKOFF_MS);
   retryCount += 1;
-  console.warn(`[MQTT] Disconnected. Reconnect attempt ${retryCount}/${MAX_RETRIES} in ${delay}ms`);
+  console.warn(`[MQTT] Disconnected. Reconnect attempt ${retryCount} in ${delay}ms`);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     try {
@@ -132,6 +135,8 @@ async function handleMessage(topic, payloadBuffer) {
     await handleTelemetry(deviceId, data);
   } else if (topic.endsWith('/status')) {
     handleStatus(deviceId, data);
+  } else if (topic.endsWith('/camera')) {
+    await handleCameraFrame(deviceId, data);
   }
 }
 
@@ -144,7 +149,15 @@ async function handleTelemetry(deviceId, data) {
 
   const timestamp = data.timestamp || new Date().toISOString();
   const fuelLevel = Number(data.fuel_level);
+  // AI engine expects fuel_level as percentage (0-100). Firmware publishes
+  // fuel_pct separately; fall back to fuel_level only if pct is absent.
+  const fuelPctForAi = data.fuel_pct != null ? Number(data.fuel_pct) : fuelLevel;
   const engineStatus = data.engine_status || null;
+  // The AI engine compares engine_status against uppercase "OFF"/"ON", but
+  // firmware sends lowercase "off"/"running". Normalize ONLY for the AI call so
+  // the engine-off fuel-drop rule actually fires; the original casing is still
+  // what we persist to fuel_data below.
+  const engineStatusForAi = engineStatus ? String(engineStatus).toUpperCase() : null;
   const voltage = data.voltage != null ? Number(data.voltage) : null;
 
   // 2. Insert fuel telemetry.
@@ -192,9 +205,15 @@ async function handleTelemetry(deviceId, data) {
   // 6. Run anomaly analysis (fail-safe — never throws, returns fallback on error).
   //    voltage/engine_status are forwarded so the engine's low-voltage and
   //    engine-off fuel-drop rules can fire (null when absent — engine defaults).
-  const aiResult = await aiService.analyze(deviceId, fuelLevel, timestamp, voltage, engineStatus);
+  const aiResult = await aiService.analyze(deviceId, fuelPctForAi, timestamp, voltage, engineStatusForAi);
 
   // 7. Create alert and flag device if anomaly detected.
+  //    Debounce: only ONE active alert per (device_id, alert_type) is kept. A
+  //    device stuck in an anomalous state publishes every ~15s, so without this
+  //    the table accumulates a duplicate row per message. ON CONFLICT against the
+  //    partial unique index (uq_alerts_active_per_device_type) makes this atomic
+  //    and race-safe — a duplicate inserts nothing and returns no row, so we only
+  //    broadcast alert_new on the normal→anomaly transition.
   if (aiResult.anomaly === true) {
     const severity = severityMap[aiResult.severity_code] || 'medium';
     const message = aiResult.reason || 'Anomaly detected by ML model';
@@ -202,25 +221,31 @@ async function handleTelemetry(deviceId, data) {
     const inserted = await db.query(
       `INSERT INTO alerts (device_id, alert_type, alert_message, severity)
        VALUES ($1, $2, $3, $4)
+       ON CONFLICT (device_id, alert_type) WHERE status = 'active' DO NOTHING
        RETURNING alert_id`,
       [deviceId, 'fuel_anomaly', message, severity]
     );
 
+    // Keep the device flagged anomalous regardless (idempotent re-assert).
     await db.query(
       `UPDATE devices SET status = 'anomaly' WHERE device_id = $1`,
       [deviceId]
     );
 
-    wsService.broadcast('alert_new', {
-      alert_id: inserted.rows[0].alert_id,
-      device_id: deviceId,
-      alert_type: 'fuel_anomaly',
-      alert_message: message,
-      severity,
-      risk_level: aiResult.risk_level,
-      anomaly_score: aiResult.anomaly_score,
-      timestamp
-    });
+    // Only broadcast when a genuinely new alert was created (not a duplicate).
+    // With RETURNING, a suppressed ON CONFLICT insert yields zero rows.
+    if (inserted.rows.length > 0) {
+      wsService.broadcast('alert_new', {
+        alert_id: inserted.rows[0].alert_id,
+        device_id: deviceId,
+        alert_type: 'fuel_anomaly',
+        alert_message: message,
+        severity,
+        risk_level: aiResult.risk_level,
+        anomaly_score: aiResult.anomaly_score,
+        timestamp
+      });
+    }
   }
 
   // 8. Push live telemetry update to all connected dashboard clients.
@@ -254,6 +279,117 @@ function handleStatus(deviceId, data) {
 }
 
 /**
+ * Persist a base64-encoded JPEG frame published by an ESP32 main unit on
+ * device/{id}/camera. Frames piggyback on the same trust boundary as telemetry:
+ * the device is already authorized/enabled in the devices table, so we don't
+ * re-validate per-frame. The decoded image is written to UPLOAD_DIR, recorded in
+ * camera_data with a /media path, broadcast to dashboards, and old frames are
+ * pruned so disk usage stays bounded.
+ */
+async function handleCameraFrame(deviceId, data) {
+  if (!data.image_base64) {
+    console.warn(`[MQTT] Camera frame from ${deviceId} missing image_base64 — discarded`);
+    return;
+  }
+
+  const pauseCheck = await db.query('SELECT camera_paused FROM devices WHERE device_id = $1', [deviceId]);
+  if (pauseCheck.rows.length === 0) {
+    console.warn(`[MQTT] Camera frame from unknown device ${deviceId} — discarded`);
+    return;
+  }
+  if (pauseCheck.rows[0].camera_paused) {
+    console.log(`[MQTT] Camera frame from ${deviceId} dropped — device is paused`);
+    return;
+  }
+
+  const timestamp = data.timestamp || new Date().toISOString();
+  const uploadDir = process.env.UPLOAD_DIR || './uploads/cameras';
+  // Random suffix prevents two frames in the same millisecond from colliding on
+  // one filename (which would orphan a camera_data row when the shared file is
+  // later pruned). Mirrors the unique naming used by the HTTP upload path.
+  const filename = `${deviceId}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.jpg`;
+  const filePath = path.join(uploadDir, filename);
+
+  try {
+    const buffer = Buffer.from(data.image_base64, 'base64');
+
+    const maxBytes = (parseInt(process.env.MAX_IMAGE_SIZE_MB || '15')) * 1024 * 1024;
+    if (buffer.length === 0 || buffer.length > maxBytes) {
+      console.warn(`[MQTT] Camera frame from ${deviceId} has invalid size (${buffer.length} bytes) — discarded`);
+      return;
+    }
+
+    fs.mkdirSync(uploadDir, { recursive: true });
+    fs.writeFileSync(filePath, buffer);
+
+    const publicPath = `/media/cameras/${filename}`;
+
+    await db.query(
+      `INSERT INTO camera_data (device_id, image_path, timestamp)
+       VALUES ($1, $2, $3)`,
+      [deviceId, publicPath, timestamp]
+    );
+
+    wsService.broadcast('camera_frame', {
+      device_id: deviceId,
+      image_url: publicPath,
+      timestamp
+    });
+
+    pruneOldFrames(deviceId, uploadDir).catch((err) =>
+      console.error(`[MQTT] Frame cleanup failed for ${deviceId}: ${err.message}`)
+    );
+  } catch (err) {
+    console.error(`[MQTT] Failed to process camera frame from ${deviceId}: ${err.message}`);
+  }
+}
+
+/**
+ * Keep only the newest KEEP frames per device — delete the on-disk files and the
+ * camera_data rows for everything older so storage doesn't grow unbounded.
+ */
+async function pruneOldFrames(deviceId, uploadDir) {
+  const KEEP = 20;
+  const result = await db.query(
+    `SELECT image_id, image_path FROM camera_data
+     WHERE device_id = $1
+     ORDER BY timestamp DESC
+     OFFSET $2`,
+    [deviceId, KEEP]
+  );
+
+  for (const row of result.rows) {
+    const fullPath = path.join(uploadDir, path.basename(row.image_path));
+    fs.unlink(fullPath, () => {});
+  }
+
+  if (result.rows.length > 0) {
+    const ids = result.rows.map((r) => r.image_id);
+    await db.query(`DELETE FROM camera_data WHERE image_id = ANY($1)`, [ids]);
+  }
+}
+
+/**
+ * Publish a camera control command to a device. Used by the REST API to
+ * pause/resume camera snapshots without touching telemetry.
+ */
+function publishCameraControl(deviceId, action) {
+  if (!client || !client.connected) {
+    console.warn(`[MQTT] Cannot publish camera control — client not connected`);
+    return;
+  }
+  const topic = `device/${deviceId}/camera/control`;
+  const payload = JSON.stringify({ action });
+  client.publish(topic, payload, { qos: 1 }, (err) => {
+    if (err) {
+      console.error(`[MQTT] Failed to publish camera control to ${deviceId}: ${err.message}`);
+    } else {
+      console.log(`[MQTT] Published camera control '${action}' to ${deviceId}`);
+    }
+  });
+}
+
+/**
  * Cleanly close the MQTT connection. Called during graceful shutdown.
  */
 function close() {
@@ -274,4 +410,4 @@ function close() {
 
 // handleMessage and handleTelemetry are exported for integration testing of the
 // telemetry pipeline; they are not part of the public runtime surface.
-module.exports = { init, close, handleMessage, handleTelemetry };
+module.exports = { init, close, publishCameraControl, handleMessage, handleTelemetry };

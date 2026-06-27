@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { getAlerts, acknowledgeAlert } from '../services/api';
+import { getAlerts, acknowledgeAlert, acknowledgeAllAlerts } from '../services/api';
 import socketService from '../services/socket';
 import Icon from '../components/ui/Icon';
 import { PageHeader, Stat, FilterChips, Pill, Dot, EmptyState } from '../components/ui';
@@ -77,10 +77,20 @@ export default function Alerts() {
 
   const active = filtered.find((a) => a.alert_id === selectedId) || filtered[0];
 
+  const [ackingAll, setAckingAll] = useState(false);
   const ackAll = async () => {
-    for (const a of filtered) {
-      // eslint-disable-next-line no-await-in-loop
-      await dismiss(a.alert_id);
+    if (filtered.length === 0) return;
+    // Snapshot which ids we're clearing so we can reconcile after one request.
+    const ids = new Set(filtered.map((a) => a.alert_id));
+    setAckingAll(true);
+    try {
+      await acknowledgeAllAlerts({ severity: filter === 'all' ? undefined : filter });
+      setAlerts((prev) => prev.filter((a) => !ids.has(a.alert_id)));
+      notifyAlertsChanged();
+    } catch (e) {
+      // leave list intact on failure
+    } finally {
+      setAckingAll(false);
     }
   };
 
@@ -100,9 +110,9 @@ export default function Alerts() {
         }
         actions={
           canAck && (
-            <button className="btn btn-primary" onClick={ackAll} disabled={filtered.length === 0}>
+            <button className="btn btn-primary" onClick={ackAll} disabled={filtered.length === 0 || ackingAll}>
               <Icon name="check" size={13} />
-              Ack all
+              {ackingAll ? 'Acking…' : 'Ack all'}
             </button>
           )
         }
@@ -200,7 +210,7 @@ function AlertRow({ alert, isActive, busy, canAck, onClick, onAck }) {
           </span>
           {alert.anomaly_score != null && (
             <span>
-              Score <span className="tnum text-ink2 font-medium">{Number(alert.anomaly_score).toFixed(2)}</span>
+              Anomaly <span className="tnum text-ink2 font-medium">{(1 - Number(alert.anomaly_score)).toFixed(2)}</span>
             </span>
           )}
         </div>
@@ -230,10 +240,13 @@ function AlertDetail({ alert, busy, canAck, onAck }) {
   const r = riskTok(risk);
   const title = alert.alert_type || alert.alert_message || 'Anomaly detected';
   const hasScore = alert.anomaly_score != null;
+  // The engine scores 1.0 = normal, 0.0 = anomaly. Present the inverted value as
+  // an "anomaly likelihood" so a severe anomaly reads as a high number/full bar.
+  const anomalyLikelihood = hasScore ? 1 - Number(alert.anomaly_score) : null;
 
   const timeline = [
     { t: 'T₀', type: 'alert', text: title },
-    { t: '+0', type: 'sys', text: hasScore ? `Scored ${Number(alert.anomaly_score).toFixed(2)} by anomaly engine` : 'Flagged by monitoring engine' },
+    { t: '+0', type: 'sys', text: hasScore ? `Anomaly likelihood ${anomalyLikelihood.toFixed(2)} from anomaly engine` : 'Flagged by monitoring engine' },
   ];
 
   return (
@@ -273,10 +286,10 @@ function AlertDetail({ alert, busy, canAck, onAck }) {
       {/* stat strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 border-b border-line divide-x divide-line">
         <DetailStat
-          label="Anomaly score"
-          value={hasScore ? Number(alert.anomaly_score).toFixed(2) : '—'}
-          sub={hasScore ? '0 → 1 anomaly' : 'Not scored'}
-          chart={hasScore ? <ScoreBar value={Number(alert.anomaly_score)} color={r.color} /> : null}
+          label="Anomaly likelihood"
+          value={hasScore ? anomalyLikelihood.toFixed(2) : '—'}
+          sub={hasScore ? '0 normal → 1 anomaly' : 'Not scored'}
+          chart={hasScore ? <ScoreBar value={anomalyLikelihood} color={r.color} /> : null}
         />
         <DetailStat label="Detected" value={fmtRelative(alert.timestamp)} sub={fmtDateTime(alert.timestamp)} />
         <DetailStat label="Device" value={alert.device_id} sub={alert.device_name || '—'} />

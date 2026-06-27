@@ -8,7 +8,7 @@ const multer = require('multer');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const wsService = require('../services/wsService');
-const cameraProxy = require('../services/cameraProxy');
+const mqttService = require('../services/mqttService');
 const { validateDevice } = require('../services/deviceAuth');
 
 const router = express.Router();
@@ -52,6 +52,7 @@ router.get('/', requireAuth, async (req, res, next) => {
          d.device_name,
          d.status,
          d.operator_name,
+         d.camera_paused,
          f.fuel_level,
          f.voltage,
          f.engine_status,
@@ -132,28 +133,14 @@ router.get('/:id/gps', requireAuth, async (req, res, next) => {
 
 /**
  * GET /api/devices/:id/camera/stream
- * Proxies the device's live MJPEG stream through the backend so the dashboard
- * loads it same-origin and the single-client ESP32-CAM is only ever hit by one
- * connection (this hub) regardless of how many viewers are watching.
- * Auth accepts ?token= since an <img> cannot send an Authorization header.
+ * Deprecated. The ESP32-CAM no longer serves a reachable HTTP/MJPEG stream — it
+ * sits behind NAT/CGNAT. Cameras now publish periodic base64 JPEG snapshots over
+ * MQTT (device/{id}/camera), so clients should poll GET /:id/camera/latest.
  */
-router.get('/:id/camera/stream', requireAuth, async (req, res, next) => {
-  try {
-    const result = await db.query(
-      `SELECT image_path
-       FROM camera_data
-       WHERE device_id = $1
-       ORDER BY timestamp DESC
-       LIMIT 1`,
-      [req.params.id]
-    );
-    if (result.rowCount === 0 || !/^https?:\/\//i.test(result.rows[0].image_path)) {
-      return res.status(404).json({ error: 'No live stream for this device' });
-    }
-    return cameraProxy.attach(req.params.id, result.rows[0].image_path, req, res);
-  } catch (err) {
-    return next(err);
-  }
+router.get('/:id/camera/stream', requireAuth, (req, res) => {
+  return res.status(410).json({
+    error: 'Live stream proxy is deprecated. Cameras now publish periodic snapshots via MQTT — use GET /:id/camera/latest instead.'
+  });
 });
 
 /**
@@ -181,6 +168,76 @@ router.get('/:id/camera/latest', requireAuth, async (req, res, next) => {
       image_url: isAbsolute ? row.image_path : `/media/cameras/${path.basename(row.image_path)}`,
       timestamp: row.timestamp
     });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/devices/:id/camera/control
+ * Body: { action: "pause" | "resume" }
+ * Publishes an MQTT command to the device and updates camera_paused state.
+ * Open to all authenticated roles (admin, operator, viewer) — no role restriction.
+ */
+router.post('/:id/camera/control', requireAuth, async (req, res, next) => {
+  try {
+    const { action } = req.body;
+    if (action !== 'pause' && action !== 'resume') {
+      return res.status(400).json({ error: 'action must be "pause" or "resume"' });
+    }
+
+    const deviceId = req.params.id;
+
+    // Confirm device exists before publishing/updating.
+    const deviceCheck = await db.query(
+      'SELECT device_id FROM devices WHERE device_id = $1',
+      [deviceId]
+    );
+    if (deviceCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    const paused = action === 'pause';
+
+    await db.query(
+      'UPDATE devices SET camera_paused = $1 WHERE device_id = $2',
+      [paused, deviceId]
+    );
+
+    // Publish control command via MQTT (optimistic — no device ack expected).
+    mqttService.publishCameraControl(deviceId, action);
+
+    // Log this action for audit purposes.
+    await db.query(
+      `INSERT INTO audit_log (user_id, action, description) VALUES ($1, $2, $3)`,
+      [req.user.user_id, `CAMERA_${action.toUpperCase()}`, `Camera ${action} requested for device ${deviceId}`]
+    );
+
+    // Broadcast to connected dashboards so all open sessions reflect the new state.
+    wsService.broadcast('camera_control', { device_id: deviceId, camera_paused: paused });
+
+    return res.json({ device_id: deviceId, camera_paused: paused });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/devices/:id/camera/heartbeat
+ * Called periodically by the frontend while a user has the Cameras page open
+ * and a given device tile/modal visible. Upserts last_viewed_at to "now".
+ * Open to all authenticated roles — viewing activity from any role counts.
+ */
+router.post('/:id/camera/heartbeat', requireAuth, async (req, res, next) => {
+  try {
+    const deviceId = req.params.id;
+    await db.query(
+      `INSERT INTO camera_view_heartbeats (device_id, last_viewed_at)
+       VALUES ($1, NOW())
+       ON CONFLICT (device_id) DO UPDATE SET last_viewed_at = NOW()`,
+      [deviceId]
+    );
+    return res.json({ ok: true });
   } catch (err) {
     return next(err);
   }

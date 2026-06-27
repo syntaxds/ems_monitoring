@@ -12,11 +12,10 @@ import {
   FilterChips,
   TextInput,
   FuelBar,
-  SignalBars,
 } from '../components/ui';
 import { fuelTok, engineTok, fmtRelative } from '../lib/format';
 
-const TANK_CAPACITY_L = 600;
+const TANK_CAPACITY_L = 249.75;
 
 export default function Overview() {
   const [devices, setDevices] = useState([]);
@@ -194,7 +193,7 @@ export default function Overview() {
   );
 }
 
-function DeviceRow({ d, focus, onClick }) {
+const DeviceRow = React.memo(function DeviceRow({ d, focus, onClick }) {
   const fuel = d.fuel_level != null ? Number(d.fuel_level) : null;
   const pct = fuel != null ? (fuel / TANK_CAPACITY_L) * 100 : 0;
   const ftk = fuelTok(pct);
@@ -256,10 +255,18 @@ function DeviceRow({ d, focus, onClick }) {
           {fmtRelative(d.last_updated)}
         </span>
         <span className="inline-flex items-center gap-2">
-          {d.signal != null && <SignalBars value={d.signal} />}
           {gpsFix && <Icon name="pin" size={11} />}
         </span>
       </div>
     </button>
   );
-}
+}, (prev, next) =>
+  prev.focus === next.focus &&
+  prev.d.fuel_level === next.d.fuel_level &&
+  prev.d.engine_status === next.d.engine_status &&
+  prev.d.voltage === next.d.voltage &&
+  prev.d.latitude === next.d.latitude &&
+  prev.d.longitude === next.d.longitude &&
+  prev.d.status === next.d.status &&
+  prev.d.last_updated === next.d.last_updated
+);

@@ -50,6 +50,9 @@ router.post('/', requireAuth, requireRole('admin'), async (req, res, next) => {
     if (!username || !password || !role) {
       return res.status(400).json({ error: 'username, password, and role are required' });
     }
+    if (String(password).length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
     if (!VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
     }
