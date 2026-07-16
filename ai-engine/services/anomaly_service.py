@@ -1,10 +1,8 @@
 import os
 import logging
 import numpy as np
-
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-
 from model.isolation_forest import predict_telemetry
 
 
@@ -15,12 +13,10 @@ MAX_FUEL_LEVEL = 250
 
 
 fuel_history = {}
-
 metrics = {
     "total_predictions": 0,
     "total_anomalies": 0
 }
-
 
 log_dir = os.path.join(
     os.path.dirname(__file__),

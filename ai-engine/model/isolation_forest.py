@@ -46,9 +46,13 @@ def load_training_data():
 
     # fallback training data
     return np.array([
-        [50, 12.4],
-        [52, 12.5],
-        [48, 12.3]
+    [10, 12.4],
+    [30, 12.5],
+    [50, 12.3],
+    [80, 12.6],
+    [120, 12.4],
+    [170, 12.5],
+    [223, 12.4]
     ])
 
 
@@ -177,9 +181,6 @@ def retrain_model(new_data):
         }
 
     except Exception as e:
-
-        return {
-            "status": "failed",
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        }
+     raise RuntimeError(
+        f"Failed to load AI model: {e}"
+    )
