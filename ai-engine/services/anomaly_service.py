@@ -1,16 +1,16 @@
 import os
 import logging
-import numpy as np
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from model.isolation_forest import predict_telemetry
 
 
-LOW_FUEL_THRESHOLD = 10
-LOW_VOLTAGE_THRESHOLD = 11.5
-MAX_HISTORY = 10
-MAX_FUEL_LEVEL = 250
-
+MAX_FUEL_LEVEL             = 249.75   
+LOW_FUEL_THRESHOLD         = 10.0     
+LOW_VOLTAGE_THRESHOLD      = 12.0     
+ENGINE_OFF_DROP_THRESHOLD  = 5.0      
+FUEL_DROP_THRESHOLD        = 15.0     
+MAX_HISTORY                = 10    # Number of historical records               
 
 fuel_history = {}
 metrics = {
@@ -70,7 +70,7 @@ def analyze_fuel(
     device_id,
     fuel,
     voltage=12.4,
-    engine_status="ON"
+    engine_status="on"
 ):
 
     if device_id not in fuel_history:
@@ -90,9 +90,9 @@ def analyze_fuel(
         voltage
     )
 
-    prediction = ml_result["prediction"]
-    score = ml_result["score"]
-    model_version = ml_result["model_version"]
+    prediction = ml_result.get("prediction", 1)
+    score = ml_result.get("score", 0.5)
+    model_version = ml_result.get("model_version", "unknown")
 
     confidence = round(
         abs(0.5 - score) * 2,
@@ -131,11 +131,11 @@ def analyze_fuel(
         severity_code = 2
         anomaly_type = "low_voltage"
 
-    elif engine_status == "off" and len(history) >= 2:
+    elif engine_status.lower() == "off" and len(history) >= 2:
 
         previous_fuel = history[-2]
 
-        if previous_fuel - fuel > 5:
+        if previous_fuel - fuel > ENGINE_OFF_DROP_THRESHOLD:
 
             is_anomaly = True
             reason = "Fuel drop detected while engine is OFF"
@@ -152,7 +152,7 @@ def analyze_fuel(
         drop = previous_fuel - fuel
 
         # COMBINE RULE + ML SIGNAL
-        if drop > 15 and prediction == -1:
+        if drop > FUEL_DROP_THRESHOLD and prediction == -1:
 
             is_anomaly = True
             reason = "Sudden fuel drop confirmed by ML"
@@ -160,7 +160,7 @@ def analyze_fuel(
             severity_code = 3
             anomaly_type = "fuel_drop"
 
-        elif drop > 15:
+        elif drop > FUEL_DROP_THRESHOLD:
 
             is_anomaly = True
             reason = "Sudden fuel drop detected"
@@ -189,21 +189,21 @@ def analyze_fuel(
         )
 
     return {
-        "timestamp": datetime.utcnow().isoformat(),
-        "device_id": device_id,
-        "fuel_level": fuel,
-        "voltage": voltage,
-        "engine_status": engine_status,
-        "history": history,
-        "anomaly_score": score,
-        "confidence": confidence,
-        "model_version": model_version,
-        "anomaly": is_anomaly,
-        "risk_level": risk,
-        "anomaly_type": anomaly_type,
-        "severity_code": severity_code,
-        "reason": reason
-    }
+    "timestamp": datetime.utcnow().isoformat(),
+    "device_id": device_id,
+    "fuel_level": fuel,
+    "voltage": voltage,
+    "engine_status": engine_status,
+    "history": history,
+    "anomaly_score": score,
+    "confidence": confidence,
+    "model_version": model_version,
+    "anomaly": is_anomaly,
+    "risk_level": risk,
+    "anomaly_type": anomaly_type,
+    "severity_code": severity_code,
+    "reason": reason
+}
 
 
 def get_metrics():
