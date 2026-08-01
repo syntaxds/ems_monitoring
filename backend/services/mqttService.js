@@ -154,10 +154,12 @@ async function handleTelemetry(deviceId, data) {
   const fuelPctForAi = data.fuel_pct != null ? Number(data.fuel_pct) : fuelLevel;
   // Firmware publishes "ON"/"OFF"; normalise to the canonical lowercase values
   // ("running"/"off") used by the dashboard before persisting and broadcasting.
+  // Firmware publishes "ON"/"OFF"; normalise to "running"/"off".
+  // If engine_status is absent from the payload, default to "off".
   const rawEngine = data.engine_status ? String(data.engine_status).toUpperCase() : null;
-  const engineStatus = rawEngine === 'ON' ? 'running' : rawEngine === 'OFF' ? 'off' : (data.engine_status || null);
+  const engineStatus = rawEngine === 'ON' ? 'running' : 'off';
   // AI engine expects uppercase "ON"/"OFF".
-  const engineStatusForAi = rawEngine;
+  const engineStatusForAi = rawEngine ?? 'OFF';
   const voltage = data.voltage != null ? Number(data.voltage) : null;
 
   // 2. Insert fuel telemetry.
