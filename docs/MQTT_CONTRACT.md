@@ -111,7 +111,10 @@ The same `device_token` must appear in the device's telemetry payloads.
 3. Insert into `gps_data` (only if `latitude` and `longitude` are non-null).
 4. If `stream_url` present: insert into `camera_data` and broadcast `camera_frame`.
 5. Set `devices.status = 'active'`.
-6. Call the AI engine for anomaly analysis (fail-safe, 5 s timeout).
+6. Call the AI engine for anomaly analysis (fail-safe, 5 s timeout). The AI
+   engine uses `timestamp` (forwarded end-to-end from the device payload) to
+   compute a burn-rate (L/hour) fuel-drop check; if `timestamp` is absent it
+   falls back to a coarser absolute-drop check.
 7. On anomaly: insert an `alerts` row, set `devices.status = 'anomaly'`, broadcast `alert_new`.
 8. Broadcast `fuel_update` and `gps_update` (the latter only when coordinates were present).
 
