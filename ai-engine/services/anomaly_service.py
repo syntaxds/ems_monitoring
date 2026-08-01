@@ -1,16 +1,20 @@
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from model.isolation_forest import predict_telemetry
 
 
-MAX_FUEL_LEVEL             = 249.75   
-LOW_FUEL_THRESHOLD         = 10.0     
-LOW_VOLTAGE_THRESHOLD      = 12.0     
-ENGINE_OFF_DROP_THRESHOLD  = 5.0      
-FUEL_DROP_THRESHOLD        = 15.0     
-MAX_HISTORY                = 10    # Number of historical records               
+MAX_FUEL_LEVEL             = 249.75
+LOW_FUEL_THRESHOLD         = 10.0
+LOW_VOLTAGE_THRESHOLD      = 12.0
+ENGINE_OFF_DROP_THRESHOLD  = 5.0
+FUEL_DROP_THRESHOLD        = 15.0
+MAX_HISTORY                = 30    
+MAX_BURN_RATE_LPH          = 25.0  # PC135-class practical ceiling while running -> HIGH
+WARN_BURN_RATE_LPH         = 20.0  # heavy-duty ceiling -> MEDIUM (HIGH if ML corroborates)
+MIN_RATE_WINDOW_SECONDS    = 300.0 # below this, a computed L/h rate is dominated by sensor
+                                    # noise; fall back to the coarse absolute-drop check
 
 fuel_history = {}
 metrics = {
@@ -66,17 +70,44 @@ def write_anomaly_log(
     )
 
 
+def parse_timestamp(ts):
+    """Parse a client-supplied ISO 8601 timestamp into a UTC-aware datetime.
+    Returns None on missing/non-string/malformed input so callers can degrade
+    gracefully instead of crashing. Handles the trailing 'Z' emitted by
+    JS Date.toISOString() (e.g. "2026-05-23T13:17:20.176Z"), which
+    datetime.fromisoformat() does not accept on Python < 3.11.
+    """
+
+    if not ts or not isinstance(ts, str):
+        return None
+
+    try:
+        normalized = ts[:-1] + "+00:00" if ts.endswith("Z") else ts
+        dt = datetime.fromisoformat(normalized)
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+
+        return dt
+
+    except (ValueError, TypeError):
+        return None
+
+
 def analyze_fuel(
     device_id,
     fuel,
     voltage=12.4,
-    engine_status="on"
+    engine_status="on",
+    timestamp=None
 ):
+
+    now = parse_timestamp(timestamp) or datetime.now(timezone.utc)
 
     if device_id not in fuel_history:
         fuel_history[device_id] = []
 
-    fuel_history[device_id].append(fuel)
+    fuel_history[device_id].append({"fuel": fuel, "timestamp": now})
 
     if len(fuel_history[device_id]) > MAX_HISTORY:
         fuel_history[device_id].pop(0)
@@ -133,7 +164,7 @@ def analyze_fuel(
 
     elif engine_status.lower() == "off" and len(history) >= 2:
 
-        previous_fuel = history[-2]
+        previous_fuel = history[-2]["fuel"]
 
         if previous_fuel - fuel > ENGINE_OFF_DROP_THRESHOLD:
 
@@ -143,39 +174,92 @@ def analyze_fuel(
             severity_code = 3
             anomaly_type = "engine_off_fuel_drop"
 
-    # TREND & ML ANALYSIS
+    # BURN-RATE ANALYSIS
+    #
+    # Physically-grounded L/hour check calibrated to a Komatsu PC135-class
+    # excavator (idle ~3-5, light duty ~8-12, heavy duty ~15-20, practical
+    # ceiling ~25 L/h while running), replacing the old absolute-liters-drop
+    # + naive ML corroboration. Anchored to the OLDEST sample still held in
+    # this device's rolling window (not just the previous reading) so a
+    # single sensor-noise blip doesn't compute to an absurd rate at a ~15s
+    # publish cadence, and gated on MIN_RATE_WINDOW_SECONDS of elapsed time
+    # before a rate is trusted at all.
+    if not is_anomaly and engine_status.lower() != "off" and len(history) >= 2:
 
-    if not is_anomaly and len(history) >= 2:
+        baseline = history[0]
+        elapsed_seconds = (now - baseline["timestamp"]).total_seconds()
 
-        previous_fuel = history[-2]
+        if elapsed_seconds >= MIN_RATE_WINDOW_SECONDS:
 
-        drop = previous_fuel - fuel
+            drop = baseline["fuel"] - fuel
+            rate_lph = (drop / elapsed_seconds) * 3600.0 if drop > 0 else 0.0
 
-        # COMBINE RULE + ML SIGNAL
-        if drop > FUEL_DROP_THRESHOLD and prediction == -1:
+            if rate_lph > MAX_BURN_RATE_LPH:
 
-            is_anomaly = True
-            reason = "Sudden fuel drop confirmed by ML"
-            risk = "HIGH"
-            severity_code = 3
-            anomaly_type = "fuel_drop"
+                is_anomaly = True
+                reason = f"Fuel burn rate {rate_lph:.1f} L/h exceeds physical ceiling for this engine class"
+                risk = "HIGH"
+                severity_code = 3
+                anomaly_type = "fuel_drop"
 
-        elif drop > FUEL_DROP_THRESHOLD:
+            elif rate_lph > WARN_BURN_RATE_LPH:
 
-            is_anomaly = True
-            reason = "Sudden fuel drop detected"
-            risk = "MEDIUM"
-            severity_code = 2
-            anomaly_type = "fuel_drop"
+                if prediction == -1:
 
-    # ML FALLBACK
+                    is_anomaly = True
+                    reason = f"Fuel burn rate {rate_lph:.1f} L/h above heavy-duty range, confirmed by ML"
+                    risk = "HIGH"
+                    severity_code = 3
+                    anomaly_type = "fuel_drop"
 
+                else:
+
+                    is_anomaly = True
+                    reason = f"Fuel burn rate {rate_lph:.1f} L/h above heavy-duty range"
+                    risk = "MEDIUM"
+                    severity_code = 2
+                    anomaly_type = "fuel_drop"
+
+        else:
+
+            # DEGRADED-MODE SAFETY NET: not enough elapsed time yet for a
+            # reliable rate (device just started reporting, fuel_history was
+            # just reset by a restart, or the client timestamp is missing/
+            # malformed and we're timing off server-arrival clock instead).
+            # Fall back to the old coarse absolute-liters check against the
+            # immediately previous reading, with its original ML corroboration.
+            previous_fuel = history[-2]["fuel"]
+            drop = previous_fuel - fuel
+
+            if drop > FUEL_DROP_THRESHOLD and prediction == -1:
+
+                is_anomaly = True
+                reason = "Sudden fuel drop confirmed by ML (insufficient timing data for rate check)"
+                risk = "HIGH"
+                severity_code = 3
+                anomaly_type = "fuel_drop"
+
+            elif drop > FUEL_DROP_THRESHOLD:
+
+                is_anomaly = True
+                reason = "Sudden fuel drop detected (insufficient timing data for rate check)"
+                risk = "MEDIUM"
+                severity_code = 2
+                anomaly_type = "fuel_drop"
+
+    # ML FALLBACK (INFORMATIONAL ONLY)
+    #
+    # IsolationForest flags any statistically unusual (fuel, voltage) point in
+    # isolation, with no notion of rate/direction/context. Demoted to a
+    # non-alerting, informational classification: surfaced in the response for
+    # observability/tuning, but never independently creates a backend alert
+    # (is_anomaly stays False, so write_anomaly_log below is never called and
+    # mqttService.js's alert insert never fires for this branch alone).
     if not is_anomaly and prediction == -1:
 
-        is_anomaly = True
-        reason = "Anomaly detected by ML model"
-        risk = "MEDIUM"
-        severity_code = 2
+        reason = "Statistically unusual reading (ML) — no rule violation, informational only"
+        risk = "LOW"
+        severity_code = 1
         anomaly_type = "ml_detected"
 
     if is_anomaly:
@@ -194,7 +278,7 @@ def analyze_fuel(
     "fuel_level": fuel,
     "voltage": voltage,
     "engine_status": engine_status,
-    "history": history,
+    "history": [h["fuel"] for h in history],
     "anomaly_score": score,
     "confidence": confidence,
     "model_version": model_version,

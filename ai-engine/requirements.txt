@@ -5,3 +5,4 @@ joblib
 gunicorn
 python-dotenv
 pandas
+pytest
