@@ -59,11 +59,28 @@ The key is read from the environment and is never hardcoded in source.
 ```json
 {
   "device_id": "EX-001",
-  "fuel_level": 20,
+  "fuel_level": 180,
   "timestamp": "2026-05-23T13:17:20.176Z"
 }
 ```
-`timestamp` is always ISO 8601 UTC.
+`fuel_level` must be **litres** (0–249.75 for a PC135-class tank) for the
+rules below to be meaningful — the engine's thresholds, training data, and
+`MAX_FUEL_LEVEL` constant are all calibrated on litres, not a 0–100
+percentage.
+
+> **Known contract gap (unresolved, backend-side):** as of this writing, the
+> backend (`mqttService.js` / `internal.js`, owned by the backend team) still
+> prefers `fuel_pct` (a 0–100 percentage) over `fuel_level` when calling this
+> endpoint. Until that's changed on the backend side, the burn-rate check
+> below receives percentage-scaled input and its L/h math will be off by the
+> tank-capacity factor. This needs to be coordinated with whoever owns
+> `backend/services/mqttService.js` and `backend/routes/internal.js` — not
+> something the AI engine can fix unilaterally.
+
+`timestamp` is always ISO 8601 UTC, and should be sent on every request: it
+anchors the burn-rate (L/hour) fuel-drop check described below. If omitted or
+malformed, the engine falls back to a coarser absolute-drop check instead (see
+Risk Level Rules).
 
 ### Response
 ```json
@@ -71,11 +88,11 @@ The key is read from the environment and is never hardcoded in source.
   "status": "processed",
   "timestamp": "2026-05-23T13:55:05.711Z",
   "device_id": "EX-001",
-  "fuel_level": 20,
+  "fuel_level": 180,
   "anomaly": true,
-  "risk_level": "MEDIUM",
-  "severity_code": 2,
-  "reason": "Anomaly detected by ML model",
+  "risk_level": "HIGH",
+  "severity_code": 3,
+  "reason": "Fuel burn rate 42.3 L/h exceeds physical ceiling for this engine class",
   "anomaly_score": 0.485
 }
 ```
@@ -86,8 +103,8 @@ The key is read from the environment and is never hardcoded in source.
 ```json
 {
   "devices": [
-    { "device_id": "EX-001", "fuel_level": 20 },
-    { "device_id": "EX-002", "fuel_level": 50 }
+    { "device_id": "EX-001", "fuel_level": 180 },
+    { "device_id": "EX-002", "fuel_level": 95 }
   ]
 }
 ```
@@ -119,11 +136,20 @@ highlighting, and fleet risk visualization.
 
 | Condition | Risk Level |
 |-----------|------------|
-| `fuel_level < 10` | HIGH |
-| `fuel_level > 100` | HIGH |
-| sudden fuel drop > 15 | HIGH |
-| Isolation Forest anomaly detected | MEDIUM |
+| `fuel_level < 0` or `> 249.75` (`MAX_FUEL_LEVEL`) | HIGH — invalid sensor reading |
+| `fuel_level < 10` | LOW — treated as an expected low-fuel state, no alert |
+| `voltage < 12.0` | MEDIUM — low voltage |
+| fuel drop > 5 L while `engine_status == "off"` | HIGH — engine-off fuel drop |
+| burn rate > 25 L/h while running (PC135-class ceiling) | HIGH |
+| burn rate > 20 L/h while running | MEDIUM (HIGH if corroborated by the ML model) |
+| `timestamp` missing/malformed and single-step drop > 15 L | MEDIUM (HIGH if ML-corroborated) — degraded-mode fallback, no rate available |
+| Isolation Forest flags an unusual `(fuel, voltage)` point | LOW — informational only, does not create an alert by itself |
 | Normal fuel usage | LOW |
+
+The burn-rate check requires at least two readings for a device and
+`timestamp` on each request; it's computed from the oldest reading still held
+in that device's rolling history window (up to 30 readings), not just the
+immediately previous one, so a single noisy sample can't swing the rate.
 
 ## Severity Code Mapping
 
