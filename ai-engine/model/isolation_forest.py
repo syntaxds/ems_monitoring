@@ -6,10 +6,21 @@ import pandas as pd
 from datetime import datetime
 from sklearn.ensemble import IsolationForest
 
-MODEL_DIR = "model"
 MODEL_VERSION = "1.2.0"
 
-TRAINING_DATA_PATH = "data/training_data.csv"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_DIR = BASE_DIR
+
+DATA_DIR = os.path.join(
+    os.path.dirname(BASE_DIR),
+    "data"
+)
+
+TRAINING_DATA_PATH = os.path.join(
+    DATA_DIR,
+    "training_data.csv"
+)
 
 LATEST_MODEL_PATH = os.path.join(
     MODEL_DIR,
@@ -37,22 +48,27 @@ def load_training_data():
 
         if not all(col in df.columns for col in required_columns):
             raise ValueError(
-                f"training_data.csv harus memiliki kolom {required_columns}"
+                f"training_data.csv must contain columns: {required_columns}"
             )
+
+        if df.empty:
+            raise ValueError("Training dataset is empty.")
 
         return df[
             required_columns
         ].values
 
-    # fallback training data
+      # Emergency fallback dataset.
+      # Used only if training_data.csv cannot be loaded.
+      # This keeps the AI service running for development/testing.
     return np.array([
-    [10, 12.4],
-    [30, 12.5],
-    [50, 12.3],
-    [80, 12.6],
-    [120, 12.4],
-    [170, 12.5],
-    [223, 12.4]
+        [10, 12.4],
+        [30, 12.5],
+        [50, 12.3],
+        [80, 12.6],
+        [120, 12.4],
+        [170, 12.5],
+        [223, 12.4]
     ])
 
 
@@ -61,7 +77,7 @@ def create_model():
     training_data = load_training_data()
 
     model = IsolationForest(
-        contamination=0.02,      
+        contamination=0.02,
         random_state=42,
         n_estimators=100
     )
@@ -100,7 +116,10 @@ def load_model():
 
         return model
 
-    except Exception:
+    except Exception as e:
+
+        print(f"[AI MODEL] Failed to load existing model: {e}")
+        print("[AI MODEL] Creating a new model...")
 
         model = create_model()
 
@@ -125,6 +144,7 @@ def predict_telemetry(
         features
     )[0]
 
+    
     normalized_score = round(
         max(0, min(1, raw_score + 0.5)),
         3
@@ -164,7 +184,7 @@ def retrain_model(new_data):
             }
 
         model = IsolationForest(
-            contamination=0.02,      
+            contamination=0.02,
             random_state=42,
             n_estimators=100
         )
@@ -181,6 +201,8 @@ def retrain_model(new_data):
         }
 
     except Exception as e:
-     raise RuntimeError(
-        f"Failed to load AI model: {e}"
-    )
+
+        return {
+            "status": "failed",
+            "error": str(e)
+        }
