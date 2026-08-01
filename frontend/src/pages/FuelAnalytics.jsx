@@ -121,16 +121,20 @@ export default function FuelAnalytics() {
     // first→last gives 0 whenever fuel has a net rise (EMA settling, refuel),
     // even if real consumption happened in between.
     let consumed = 0;
+    let consumedWhileRunning = 0;
     let runningMs = 0;
     let refuels = 0;
     for (let i = 1; i < points.length; i++) {
       const delta = points[i].v - points[i - 1].v;
-      if (points[i - 1].engine === 'running') runningMs += points[i].t - points[i - 1].t;
-      if (delta < 0) consumed += -delta;
-      else if (delta > 30) refuels++;
+      const isRunning = points[i - 1].engine === 'running';
+      if (isRunning) runningMs += points[i].t - points[i - 1].t;
+      if (delta < 0) {
+        consumed += -delta;
+        if (isRunning) consumedWhileRunning += -delta;
+      } else if (delta > 30) refuels++;
     }
     const runningHours = runningMs / 3600000;
-    const burnRate = runningHours > 0 ? consumed / runningHours : 0;
+    const burnRate = runningHours > 0 ? consumedWhileRunning / runningHours : 0;
     return {
       current,
       burned: Number(consumed.toFixed(1)),
