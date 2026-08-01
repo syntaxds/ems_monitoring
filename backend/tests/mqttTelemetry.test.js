@@ -34,7 +34,7 @@ const telemetry = (over = {}) => ({
   device_token: 'tok',
   fuel_level: 45,
   voltage: 12.4,
-  engine_status: 'ON',
+  engine_status: 'running',
   timestamp: '2026-05-30T10:00:00.000Z',
   ...over
 });
@@ -64,14 +64,14 @@ describe('mqttService.handleTelemetry', () => {
   });
 
   it('forwards voltage and engine_status to the AI engine', async () => {
-    await handleTelemetry('EX-001', telemetry({ voltage: 11.1, engine_status: 'OFF', fuel_level: 30 }));
+    await handleTelemetry('EX-001', telemetry({ voltage: 11.1, engine_status: 'off', fuel_level: 30 }));
 
     expect(aiService.analyze).toHaveBeenCalledWith(
       'EX-001',
       30,
       '2026-05-30T10:00:00.000Z',
       11.1,
-      'OFF'
+      'off'
     );
   });
 
