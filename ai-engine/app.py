@@ -111,6 +111,7 @@ def analyze():
         engine_status = str(
             req.get("engine_status", "running")
         ).lower()
+        timestamp = req.get("timestamp")
 
         if device_id is None:
             return error_response("device_id is required")
@@ -118,9 +119,9 @@ def analyze():
         if fuel_level is None:
             return error_response("fuel_level is required")
 
-        if engine_status not in ("running", "off"):
+        if engine_status not in ("running", "idle", "off"):
             return error_response(
-                "engine_status must be 'running' or 'off'"
+                "engine_status must be 'running', 'idle', or 'off'"
             )
 
         try:
@@ -144,7 +145,8 @@ def analyze():
             device_id,
             fuel_level,
             voltage,
-            engine_status
+            engine_status,
+            timestamp
         )
 
         result["status"] = "processed"
@@ -196,9 +198,11 @@ def analyze_batch():
                     device.get("engine_status", "running")
                 ).lower()
 
-                if engine_status not in ("running", "off"):
+                timestamp = device.get("timestamp")
+
+                if engine_status not in ("running", "idle", "off"):
                     raise ValueError(
-                        "engine_status must be 'running' or 'off'"
+                        "engine_status must be 'running', 'idle', or 'off'"
                     )
 
                 logger.info(
@@ -213,7 +217,8 @@ def analyze_batch():
                     device_id,
                     fuel_level,
                     voltage,
-                    engine_status
+                    engine_status,
+                    timestamp
                 )
 
                 result["status"] = "processed"
