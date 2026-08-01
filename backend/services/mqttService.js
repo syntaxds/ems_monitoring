@@ -152,14 +152,12 @@ async function handleTelemetry(deviceId, data) {
   // AI engine expects fuel_level as percentage (0-100). Firmware publishes
   // fuel_pct separately; fall back to fuel_level only if pct is absent.
   const fuelPctForAi = data.fuel_pct != null ? Number(data.fuel_pct) : fuelLevel;
-  // Firmware publishes "ON"/"OFF"; normalise to the canonical lowercase values
-  // ("running"/"off") used by the dashboard before persisting and broadcasting.
-  // Firmware publishes "ON"/"OFF"; normalise to "running"/"off".
-  // If engine_status is absent from the payload, default to "off".
-  const rawEngine = data.engine_status ? String(data.engine_status).toUpperCase() : null;
-  const engineStatus = rawEngine === 'ON' ? 'running' : 'off';
-  // AI engine expects uppercase "ON"/"OFF".
-  const engineStatusForAi = rawEngine ?? 'OFF';
+  // Firmware publishes engine_status as "running" | "idle" | "off" (see
+  // docs/MQTT_CONTRACT.md). Normalise and default anything absent/unrecognised
+  // to "off" before persisting and broadcasting.
+  const rawEngine = data.engine_status ? String(data.engine_status).toLowerCase() : null;
+  const engineStatus = rawEngine === 'running' || rawEngine === 'idle' ? rawEngine : 'off';
+  const engineStatusForAi = engineStatus;
   const voltage = data.voltage != null ? Number(data.voltage) : null;
 
   // 2. Insert fuel telemetry.
