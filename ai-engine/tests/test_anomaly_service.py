@@ -1,8 +1,6 @@
 import pytest
 from datetime import datetime, timedelta, timezone
-
 from services import anomaly_service as svc
-
 
 @pytest.fixture(autouse=True)
 def reset_state():
@@ -16,7 +14,6 @@ def reset_state():
 def iso(dt):
     return dt.isoformat().replace("+00:00", "Z")
 
-
 def stub_ml(prediction=1, score=0.9):
     def _predict(fuel, voltage):
         return {"prediction": prediction, "score": score, "model_version": "test"}
@@ -24,7 +21,6 @@ def stub_ml(prediction=1, score=0.9):
 
 
 BASE = datetime(2026, 1, 1, tzinfo=timezone.utc)
-
 
 def test_tiny_drop_short_interval_no_anomaly(monkeypatch):
     monkeypatch.setattr(svc, "predict_telemetry", stub_ml())
@@ -51,7 +47,7 @@ def test_high_burn_rate_while_running_is_high(monkeypatch):
 
 
 def test_moderate_burn_rate_is_medium(monkeypatch):
-    monkeypatch.setattr(svc, "predict_telemetry", stub_ml())  # prediction=1, no ML corroboration
+    monkeypatch.setattr(svc, "predict_telemetry", stub_ml())
 
     svc.analyze_fuel("D3", 200.0, engine_status="running", timestamp=iso(BASE))
     # ~22 L/h over 10 min => drop = 22 * (10/60) ~= 3.67 L
@@ -80,7 +76,7 @@ def test_missing_timestamp_falls_back_to_absolute_threshold(monkeypatch):
     monkeypatch.setattr(svc, "predict_telemetry", stub_ml())
 
     svc.analyze_fuel("D5", 200.0, engine_status="running")
-    result = svc.analyze_fuel("D5", 180.0, engine_status="running")  # 20 L drop, no timestamp
+    result = svc.analyze_fuel("D5", 180.0, engine_status="running")
 
     assert result["anomaly"] is True
     assert result["risk_level"] == "MEDIUM"
