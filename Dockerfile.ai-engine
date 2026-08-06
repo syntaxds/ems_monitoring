@@ -12,13 +12,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY requirements.txt .
-# NOTE: app.py imports `python-dotenv` but it is missing from Emilia's
-# requirements.txt (the engine crashes on boot without it). We install it here
-# so local dev works without editing her folder. Emilia should add
-# `python-dotenv` to ai-engine/requirements.txt for the real fix.
-RUN pip install --no-cache-dir -r requirements.txt python-dotenv
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
 EXPOSE 5001
 CMD ["python", "app.py"]
+

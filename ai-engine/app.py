@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
+
 from services.anomaly_service import analyze_fuel, get_metrics
 from model.isolation_forest import retrain_model, MODEL_VERSION
 

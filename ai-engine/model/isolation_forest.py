@@ -144,7 +144,7 @@ def predict_telemetry(
         features
     )[0]
 
-    
+
     normalized_score = round(
         max(0, min(1, raw_score + 0.5)),
         3
