@@ -19,6 +19,7 @@ const alertRoutes = require('./routes/alerts');
 const reportRoutes = require('./routes/reports');
 const internalRoutes = require('./routes/internal');
 const userRoutes = require('./routes/users');
+const driverShiftLogRoutes = require('./routes/driverShiftLogs');
 
 const mqttService = require('./services/mqttService');
 const wsService = require('./services/wsService');
@@ -67,6 +68,10 @@ app.use(
   '/media/cameras',
   express.static(path.resolve(process.env.UPLOAD_DIR || './uploads/cameras'))
 );
+app.use(
+  '/media/shift-logs',
+  express.static(path.resolve(process.env.SHIFT_LOG_UPLOAD_DIR || './uploads/shift-logs'))
+);
 
 // --- Health check ---
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
@@ -77,6 +82,7 @@ app.use('/api/devices', deviceRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/driver-shift-logs', driverShiftLogRoutes);
 app.use('/internal', internalRoutes);
 
 // --- Optional single-origin production hosting ---

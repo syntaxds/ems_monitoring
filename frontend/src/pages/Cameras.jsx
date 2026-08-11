@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { getDevices, getDeviceCameraLatest, mediaUrl, controlDeviceCamera } from '../services/api';
 import socketService from '../services/socket';
 import Icon from '../components/ui/Icon';
@@ -16,6 +18,7 @@ function snapshotSrc(frame) {
 }
 
 export default function Cameras() {
+  const { user } = useAuth();
   const [devices, setDevices] = useState([]);
   const [frames, setFrames] = useState({}); // device_id -> { image_url, timestamp }
   const [paused, setPaused] = useState({}); // device_id -> boolean
@@ -110,6 +113,10 @@ export default function Cameras() {
     if (idx < 0) return;
     setSelected(devices[(idx + delta + devices.length) % devices.length]);
   };
+
+  if (user?.role === 'driver') {
+    return <Navigate to="/shift-start" replace />;
+  }
 
   return (
     <div className="space-y-5">

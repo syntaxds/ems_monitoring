@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { Navigate } from 'react-router-dom';
 import { getAlerts, acknowledgeAlert, acknowledgeAllAlerts } from '../services/api';
 import socketService from '../services/socket';
 import Icon from '../components/ui/Icon';
@@ -93,6 +94,10 @@ export default function Alerts() {
       setAckingAll(false);
     }
   };
+
+  if (user?.role === 'driver') {
+    return <Navigate to="/shift-start" replace />;
+  }
 
   return (
     <div className="space-y-5">

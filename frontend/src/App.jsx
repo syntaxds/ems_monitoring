@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import PrivateRoute from './components/PrivateRoute';
 import Shell from './components/Shell';
@@ -13,10 +13,22 @@ import Cameras from './pages/Cameras';
 import UserManagement from './pages/UserManagement';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import ActivateAccount from './pages/ActivateAccount';
+import ShiftStart from './pages/ShiftStart';
+import DriverLogs from './pages/DriverLogs';
 
 // Layout wrapper: sidebar + topbar shell around private pages.
 function PrivateLayout({ children }) {
   return <Shell>{children}</Shell>;
+}
+
+// Role-aware landing page: drivers go straight to the shift start form
+// (they must check in before being considered "on shift"); everyone else
+// lands on the fleet Overview as before.
+function HomeRedirect() {
+  const { user } = useAuth();
+  const dest = user?.role === 'driver' ? '/shift-start' : '/overview';
+  return <Navigate to={dest} replace />;
 }
 
 export default function App() {
@@ -28,6 +40,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/activate-account" element={<ActivateAccount />} />
 
           <Route
             path="/overview"
@@ -89,9 +102,29 @@ export default function App() {
               </PrivateRoute>
             }
           />
+          <Route
+            path="/shift-start"
+            element={
+              <PrivateRoute>
+                <PrivateLayout>
+                  <ShiftStart />
+                </PrivateLayout>
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/driver-logs"
+            element={
+              <PrivateRoute>
+                <PrivateLayout>
+                  <DriverLogs />
+                </PrivateLayout>
+              </PrivateRoute>
+            }
+          />
 
-          <Route path="/" element={<Navigate to="/overview" replace />} />
-          <Route path="*" element={<Navigate to="/overview" replace />} />
+          <Route path="/" element={<PrivateRoute><HomeRedirect /></PrivateRoute>} />
+          <Route path="*" element={<PrivateRoute><HomeRedirect /></PrivateRoute>} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

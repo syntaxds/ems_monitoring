@@ -1,8 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getDevices, generateReport } from '../services/api';
+import { Navigate } from 'react-router-dom';
+import { getDevices, generateReport, exportDriverShiftLogs } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import Icon from '../components/ui/Icon';
 import { PageHeader, Stat, SectionTitle, Segmented, SelectInput, Field, TextInput, Pill } from '../components/ui';
 import { fmtNum, fmtRelative } from '../lib/format';
+
+const EXPORT_TYPES = [
+  { value: 'fleet', label: 'Fleet Telemetry' },
+  { value: 'driver_logs', label: 'Driver Shift Logs' },
+];
 
 const RECENT_KEY = 'ems_recent_exports';
 
@@ -38,10 +45,13 @@ function dayDiff(a, b) {
 }
 
 export default function ExportData() {
+  const { user } = useAuth();
+  const exportTypes = EXPORT_TYPES.filter((t) => t.value !== 'driver_logs' || user?.role !== 'driver');
   const [devices, setDevices] = useState([]);
   const [from, setFrom] = useState(todayISO(-1));
   const [to, setTo] = useState(todayISO(0));
   const [statusFilter, setStatusFilter] = useState('all');
+  const [exportType, setExportType] = useState('fleet');
   const [fmt, setFmt] = useState('csv');
   const [exporting, setExporting] = useState('');
   const [error, setError] = useState('');
@@ -73,10 +83,11 @@ export default function ExportData() {
     setTo(todayISO(0));
   };
 
-  const doExport = async (format, range) => {
+  const doExport = async (format, range, type) => {
     const start = range ? range.from : from;
     const end = range ? range.to : to;
     const useFmt = format || fmt;
+    const useType = type || exportType;
     if (!start || !end) {
       setError('Select a start and end date first.');
       return;
@@ -84,11 +95,23 @@ export default function ExportData() {
     setError('');
     setExporting(useFmt);
     try {
-      const res = await generateReport({ start_date: start, end_date: end, format: useFmt });
+      const isDriverLogs = useType === 'driver_logs';
+      const res = isDriverLogs
+        ? await exportDriverShiftLogs({ start_date: start, end_date: end, format: useFmt })
+        : await generateReport({ start_date: start, end_date: end, format: useFmt });
       const ext = useFmt === 'pdf' ? 'pdf' : 'csv';
-      const file = `ems_report_${start}_to_${end}.${ext}`;
+      const prefix = isDriverLogs ? 'driver_shift_logs' : 'ems_report';
+      const file = `${prefix}_${start}_to_${end}.${ext}`;
       triggerDownload(res.data, file);
-      const entry = { file, format: useFmt.toUpperCase(), range: `${start} → ${end}`, when: Date.now(), rows: rows.length };
+      const entry = {
+        file,
+        format: useFmt.toUpperCase(),
+        type: useType,
+        typeLabel: isDriverLogs ? 'Driver Shift Logs' : 'Fleet Telemetry',
+        range: `${start} → ${end}`,
+        when: Date.now(),
+        rows: isDriverLogs ? null : rows.length,
+      };
       const next = [entry, ...recent].slice(0, 8);
       setRecent(next);
       try {
@@ -102,6 +125,10 @@ export default function ExportData() {
       setExporting('');
     }
   };
+
+  if (user?.role === 'driver') {
+    return <Navigate to="/shift-start" replace />;
+  }
 
   return (
     <div className="space-y-5">
@@ -121,6 +148,12 @@ export default function ExportData() {
         <aside className="card overflow-hidden self-start">
           <SectionTitle title="Filters" />
           <div className="p-5 space-y-4">
+            {exportTypes.length > 1 && (
+              <Field label="Report">
+                <Segmented value={exportType} onChange={setExportType} options={exportTypes} />
+              </Field>
+            )}
+
             <div>
               <div className="text-[12.5px] text-ink2 mb-1.5 font-medium">Date range</div>
               <div className="grid grid-cols-2 gap-2">
@@ -145,14 +178,16 @@ export default function ExportData() {
               </div>
             </div>
 
-            <Field label="Status">
-              <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                <option value="all">All statuses</option>
-                <option value="active">Active</option>
-                <option value="idle">Idle</option>
-                <option value="anomaly">Anomaly</option>
-              </SelectInput>
-            </Field>
+            {exportType === 'fleet' && (
+              <Field label="Status">
+                <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  <option value="all">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="idle">Idle</option>
+                  <option value="anomaly">Anomaly</option>
+                </SelectInput>
+              </Field>
+            )}
 
             <Field label="Format">
               <Segmented
@@ -168,7 +203,7 @@ export default function ExportData() {
             {error && <div className="text-[12.5px] text-bad bg-bad/10 rounded-btn px-3 py-2">{error}</div>}
 
             <div className="pt-3 border-t border-line space-y-1.5 text-[12px]">
-              <Row label="Devices in result" value={fmtNum(rows.length)} />
+              {exportType === 'fleet' && <Row label="Devices in result" value={fmtNum(rows.length)} />}
               <Row label="Date span" value={`${dayDiff(from, to)} days`} />
               <Row label="Format" value={fmt.toUpperCase()} />
             </div>
@@ -184,7 +219,7 @@ export default function ExportData() {
             <Stat
               label="Last export"
               value={recent[0] ? fmtRelative(recent[0].when) : '—'}
-              sub={recent[0] ? `${recent[0].format} · ${recent[0].rows} devices` : 'None yet'}
+              sub={recent[0] ? `${recent[0].format} · ${recent[0].typeLabel || 'Fleet Telemetry'}` : 'None yet'}
             />
           </div>
 
@@ -243,9 +278,9 @@ export default function ExportData() {
                   <thead>
                     <tr>
                       <th>File</th>
+                      <th>Type</th>
                       <th>Format</th>
                       <th>Range</th>
-                      <th>Devices</th>
                       <th>When</th>
                       <th></th>
                     </tr>
@@ -256,9 +291,9 @@ export default function ExportData() {
                         <td>
                           <span className="mono text-[12px]">{r.file}</span>
                         </td>
+                        <td className="text-[12.5px] text-ink2">{r.typeLabel || 'Fleet Telemetry'}</td>
                         <td className="text-[12.5px] text-ink2">{r.format}</td>
                         <td className="mono text-[12px] text-ink2">{r.range}</td>
-                        <td className="mono tnum text-ink2">{r.rows}</td>
                         <td className="text-ink3 text-[12.5px]">{fmtRelative(r.when)}</td>
                         <td className="text-right">
                           <button
@@ -266,7 +301,7 @@ export default function ExportData() {
                             disabled={exporting !== ''}
                             onClick={() => {
                               const [rf, rt] = r.range.split(' → ');
-                              doExport(r.format.toLowerCase(), { from: rf, to: rt });
+                              doExport(r.format.toLowerCase(), { from: rf, to: rt }, r.type || 'fleet');
                             }}
                           >
                             <Icon name="download" size={11} />

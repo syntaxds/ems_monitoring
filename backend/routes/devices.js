@@ -6,7 +6,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireRoleExcluding } = require('../middleware/auth');
 const wsService = require('../services/wsService');
 const mqttService = require('../services/mqttService');
 const { validateDevice } = require('../services/deviceAuth');
@@ -35,7 +35,9 @@ const upload = multer({
     if (file.mimetype === 'image/jpeg') {
       cb(null, true);
     } else {
-      cb(new Error('Only JPEG images are accepted'));
+      const err = new Error('Only JPEG images are accepted');
+      err.status = 400;
+      cb(err);
     }
   }
 });
@@ -44,7 +46,7 @@ const upload = multer({
  * GET /api/devices
  * All devices with their latest fuel reading and latest GPS fix joined.
  */
-router.get('/', requireAuth, async (req, res, next) => {
+router.get('/', requireRoleExcluding('driver'), async (req, res, next) => {
   try {
     const result = await db.query(
       `SELECT
@@ -96,7 +98,7 @@ function resolveRange(req) {
 /**
  * GET /api/devices/:id/fuel?start=&end=
  */
-router.get('/:id/fuel', requireAuth, async (req, res, next) => {
+router.get('/:id/fuel', requireRoleExcluding('driver'), async (req, res, next) => {
   try {
     const { start, end } = resolveRange(req);
     const result = await db.query(
@@ -115,7 +117,7 @@ router.get('/:id/fuel', requireAuth, async (req, res, next) => {
 /**
  * GET /api/devices/:id/gps?start=&end=
  */
-router.get('/:id/gps', requireAuth, async (req, res, next) => {
+router.get('/:id/gps', requireRoleExcluding('driver'), async (req, res, next) => {
   try {
     const { start, end } = resolveRange(req);
     const result = await db.query(
@@ -137,7 +139,7 @@ router.get('/:id/gps', requireAuth, async (req, res, next) => {
  * sits behind NAT/CGNAT. Cameras now publish periodic base64 JPEG snapshots over
  * MQTT (device/{id}/camera), so clients should poll GET /:id/camera/latest.
  */
-router.get('/:id/camera/stream', requireAuth, (req, res) => {
+router.get('/:id/camera/stream', requireRoleExcluding('driver'), (req, res) => {
   return res.status(410).json({
     error: 'Live stream proxy is deprecated. Cameras now publish periodic snapshots via MQTT — use GET /:id/camera/latest instead.'
   });
@@ -146,7 +148,7 @@ router.get('/:id/camera/stream', requireAuth, (req, res) => {
 /**
  * GET /api/devices/:id/camera/latest
  */
-router.get('/:id/camera/latest', requireAuth, async (req, res, next) => {
+router.get('/:id/camera/latest', requireRoleExcluding('driver'), async (req, res, next) => {
   try {
     const result = await db.query(
       `SELECT image_id, image_path, timestamp
@@ -177,9 +179,9 @@ router.get('/:id/camera/latest', requireAuth, async (req, res, next) => {
  * POST /api/devices/:id/camera/control
  * Body: { action: "pause" | "resume" }
  * Publishes an MQTT command to the device and updates camera_paused state.
- * Open to all authenticated roles (admin, operator, viewer) — no role restriction.
+ * Open to all authenticated roles except driver.
  */
-router.post('/:id/camera/control', requireAuth, async (req, res, next) => {
+router.post('/:id/camera/control', requireRoleExcluding('driver'), async (req, res, next) => {
   try {
     const { action } = req.body;
     if (action !== 'pause' && action !== 'resume') {
@@ -226,9 +228,9 @@ router.post('/:id/camera/control', requireAuth, async (req, res, next) => {
  * POST /api/devices/:id/camera/heartbeat
  * Called periodically by the frontend while a user has the Cameras page open
  * and a given device tile/modal visible. Upserts last_viewed_at to "now".
- * Open to all authenticated roles — viewing activity from any role counts.
+ * Open to all authenticated roles except driver.
  */
-router.post('/:id/camera/heartbeat', requireAuth, async (req, res, next) => {
+router.post('/:id/camera/heartbeat', requireRoleExcluding('driver'), async (req, res, next) => {
   try {
     const deviceId = req.params.id;
     await db.query(

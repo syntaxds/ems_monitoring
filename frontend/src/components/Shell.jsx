@@ -9,11 +9,13 @@ import { Dot, BrandMark } from './ui';
 import { fmtTime } from '../lib/format';
 
 const SCREENS = [
-  { to: '/overview', label: 'Overview', icon: 'grid' },
-  { to: '/fuel', label: 'Fuel', icon: 'fuel' },
-  { to: '/alerts', label: 'Alerts', icon: 'alert' },
-  { to: '/cameras', label: 'Cameras', icon: 'camera' },
-  { to: '/export', label: 'Export', icon: 'download' },
+  { to: '/overview', label: 'Overview', icon: 'grid', hideForDriver: true },
+  { to: '/fuel', label: 'Fuel', icon: 'fuel', hideForDriver: true },
+  { to: '/alerts', label: 'Alerts', icon: 'alert', hideForDriver: true },
+  { to: '/cameras', label: 'Cameras', icon: 'camera', hideForDriver: true },
+  { to: '/export', label: 'Export', icon: 'download', hideForDriver: true },
+  { to: '/shift-start', label: 'Shift Start', icon: 'excavator', driverOnly: true },
+  { to: '/driver-logs', label: 'Driver Logs', icon: 'excavator', hideForDriver: true },
   { to: '/users', label: 'User Management', icon: 'users', adminOnly: true },
 ];
 
@@ -44,7 +46,12 @@ function Sidebar({ user, onLogout, openAlerts, open, onClose }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-2.5 px-2">
-          {SCREENS.filter((s) => !s.adminOnly || user?.role === 'admin').map((s) => (
+          {SCREENS.filter((s) => {
+            if (s.adminOnly && user?.role !== 'admin') return false;
+            if (s.driverOnly && user?.role !== 'driver') return false;
+            if (s.hideForDriver && user?.role === 'driver') return false;
+            return true;
+          }).map((s) => (
             <NavLink
               key={s.to}
               to={s.to}

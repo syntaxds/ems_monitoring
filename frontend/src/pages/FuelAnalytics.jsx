@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { getDevices, getDeviceFuel } from '../services/api';
 import socketService from '../services/socket';
 import Icon from '../components/ui/Icon';
@@ -51,6 +53,7 @@ function detectEvents(points) {
 }
 
 export default function FuelAnalytics() {
+  const { user } = useAuth();
   const [devices, setDevices] = useState([]);
   const [selected, setSelected] = useState('');
   const [range, setRange] = useState('24h');
@@ -147,6 +150,10 @@ export default function FuelAnalytics() {
   const maxHourly = useMemo(() => Math.max(1, ...hourly.map((h) => h.value)), [hourly]);
   const events = useMemo(() => detectEvents(points), [points]);
   const selectedDevice = devices.find((d) => d.device_id === selected);
+
+  if (user?.role === 'driver') {
+    return <Navigate to="/shift-start" replace />;
+  }
 
   return (
     <div className="space-y-5">
