@@ -9,10 +9,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true;
 UPDATE users SET role = 'operator' WHERE role = 'supervisor';
 UPDATE users SET role = 'viewer'   WHERE role = 'director';
 
--- Every migration file re-runs on every startup (no per-file "already applied"
--- tracking), so this list must stay a superset of whatever later migrations
--- add — otherwise this ADD CONSTRAINT fails startup once a newer role exists
--- in the table (see 006_driver_role.sql).
+-- This list includes 'driver', which 006_driver_role.sql later re-asserts.
+-- The redundancy is historical: migrations used to re-run on every startup, so
+-- this file had to stay a superset of every later role addition. Migrations are
+-- now tracked in schema_migrations and each file runs exactly once, so the
+-- superset rule no longer applies to new migrations — but this line is left
+-- alone because changing an already-applied migration changes nothing.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'operator', 'viewer', 'driver'));
 
