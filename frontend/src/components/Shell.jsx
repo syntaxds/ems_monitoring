@@ -162,8 +162,13 @@ export default function Shell({ children }) {
     return unsubscribe;
   }, []);
 
-  // Unacknowledged alert count — initial fetch + live updates.
+  // Unacknowledged alert count — initial fetch + live updates. Skipped for
+  // drivers: GET /api/alerts is requireRoleExcluding('driver'), so the request
+  // could only ever 403 and leave the badge at 0 — same reason the Alerts nav
+  // entry is hidden for them above.
   useEffect(() => {
+    if (user?.role === 'driver') return undefined;
+
     let mounted = true;
     const refresh = async () => {
       try {
@@ -184,7 +189,7 @@ export default function Shell({ children }) {
       socketService.off('alert_new', onNew);
       window.removeEventListener('ems:alerts-changed', onChanged);
     };
-  }, []);
+  }, [user?.role]);
 
   const handleLogout = () => {
     socketService.disconnect();
