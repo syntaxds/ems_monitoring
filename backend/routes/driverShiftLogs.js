@@ -263,12 +263,13 @@ router.post('/end', requireRole('driver'), upload.single('photo'), async (req, r
 router.get('/', requireRoleExcluding('driver'), async (req, res, next) => {
   try {
     const result = await db.query(
-      `SELECT l.log_id, l.device_id, d.device_name, u.username AS driver_name,
+      `SELECT l.log_id, l.device_id, d.device_name,
+              COALESCE(u.username, 'Deleted user') AS driver_name,
               l.shift_date, l.start_time, l.end_time, l.status,
               l.fuel_initial, l.fuel_final, l.hour_meter, l.hour_meter_final,
               l.photo_path, l.end_photo_path, l.created_at
        FROM driver_shift_logs l
-       JOIN users u ON u.user_id = l.driver_user_id
+       LEFT JOIN users u ON u.user_id = l.driver_user_id
        JOIN devices d ON d.device_id = l.device_id
        ORDER BY l.shift_date DESC, l.start_time DESC`
     );
@@ -305,11 +306,12 @@ router.post('/export', requireRoleExcluding('driver'), async (req, res, next) =>
 
     const rows = (
       await db.query(
-        `SELECT l.log_id, l.device_id, d.device_name, u.username AS driver_name,
+        `SELECT l.log_id, l.device_id, d.device_name,
+                COALESCE(u.username, 'Deleted user') AS driver_name,
                 l.shift_date, l.start_time, l.end_time, l.status,
                 l.fuel_initial, l.fuel_final, l.hour_meter, l.hour_meter_final, l.created_at
          FROM driver_shift_logs l
-         JOIN users u ON u.user_id = l.driver_user_id
+         LEFT JOIN users u ON u.user_id = l.driver_user_id
          JOIN devices d ON d.device_id = l.device_id
          WHERE l.shift_date >= $1 AND l.shift_date <= $2
          ORDER BY l.shift_date ASC, l.start_time ASC`,

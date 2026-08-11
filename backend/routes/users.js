@@ -304,9 +304,9 @@ router.put('/:id/reactivate', requireAuth, requireRole('admin'), async (req, res
 
 /**
  * DELETE /api/users/:id
- * Hard-deletes a user. devices/audit_log/reports rows referencing the user
- * lose the actor reference (ON DELETE SET NULL, see migration 009) rather
- * than being removed themselves.
+ * Hard-deletes a user. devices/audit_log/reports/driver_shift_logs rows
+ * referencing the user lose the actor reference (ON DELETE SET NULL, see
+ * migrations 009 and 010) rather than being removed themselves.
  */
 router.delete('/:id', requireAuth, requireRole('admin'), async (req, res, next) => {
   try {
@@ -325,7 +325,19 @@ router.delete('/:id', requireAuth, requireRole('admin'), async (req, res, next) 
       return res.status(400).json({ error: 'Cannot delete the only remaining admin account' });
     }
 
-    await db.query('DELETE FROM users WHERE user_id = $1', [targetId]);
+    try {
+      await db.query('DELETE FROM users WHERE user_id = $1', [targetId]);
+    } catch (e) {
+      // Defensive: every known FK onto users is ON DELETE SET NULL, so this
+      // should not fire. If a future table adds a restricting reference, fail
+      // with a readable 400 instead of a raw 500 from the error handler.
+      if (e.code === '23503') {
+        return res.status(400).json({
+          error: 'User still has linked records that block deletion. Deactivate the account instead.'
+        });
+      }
+      throw e;
+    }
 
     await auditUser(
       req.user.user_id,
