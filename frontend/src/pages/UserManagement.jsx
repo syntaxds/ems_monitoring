@@ -1,20 +1,20 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getUsers, createUser, updateUser, deactivateUser, reactivateUser } from '../services/api';
+import { getUsers, createUser, updateUser, deactivateUser, reactivateUser, resendActivation, deleteUser } from '../services/api';
 import Icon from '../components/ui/Icon';
 import { PageHeader, Pill, Field, TextInput, SelectInput, EmptyState } from '../components/ui';
 
-const JOB_TITLES = ['Admin', 'PM', 'SPV', 'Director'];
-const ROLE_FOR_TITLE = { Admin: 'admin', PM: 'operator', SPV: 'operator', Director: 'viewer' };
-const ROLE_LABELS = { admin: 'Admin', operator: 'Operator', viewer: 'Viewer' };
-const ROLE_TONES = { admin: 'bad', operator: 'info', viewer: 'neutral' };
+const JOB_TITLES = ['Admin', 'PM', 'SPV', 'Director', 'Driver'];
+const ROLE_FOR_TITLE = { Admin: 'admin', PM: 'operator', SPV: 'operator', Director: 'viewer', Driver: 'driver' };
+const ROLE_LABELS = { admin: 'Admin', operator: 'Operator', viewer: 'Viewer', driver: 'Driver' };
+const ROLE_TONES = { admin: 'bad', operator: 'info', viewer: 'neutral', driver: 'accent' };
 
 function roleTone(role) {
   return ROLE_TONES[role] || 'neutral';
 }
 
-const EMPTY_FORM = { username: '', email: '', password: '', job_title: 'PM', role: 'operator' };
+const EMPTY_FORM = { username: '', email: '', job_title: 'PM', role: 'operator' };
 
 function UserModal({ initial, onClose, onSaved }) {
   const isEdit = !!initial;
@@ -25,6 +25,9 @@ function UserModal({ initial, onClose, onSaved }) {
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  // Set once a new account has been created, so we can show whether the
+  // activation email actually went out before closing the modal.
+  const [created, setCreated] = useState(null);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -36,12 +39,12 @@ function UserModal({ initial, onClose, onSaved }) {
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
-    if (!isEdit && (!form.username || !form.password)) {
-      setErr('Username and password are required.');
+    if (!isEdit && !form.username) {
+      setErr('Username is required.');
       return;
     }
-    if (!isEdit && form.password.length < 8) {
-      setErr('Password must be at least 8 characters.');
+    if (!isEdit && !form.email) {
+      setErr('Email is required — that\'s where the activation link goes.');
       return;
     }
     setBusy(true);
@@ -52,16 +55,16 @@ function UserModal({ initial, onClose, onSaved }) {
           job_title: form.job_title,
           role: form.role,
         });
+        onSaved();
       } else {
-        await createUser({
+        const { data } = await createUser({
           username: form.username,
-          email: form.email || undefined,
-          password: form.password,
+          email: form.email,
           job_title: form.job_title,
           role: form.role,
         });
+        setCreated(data);
       }
-      onSaved();
     } catch (e2) {
       const msg = e2?.response?.data?.error || 'Something went wrong.';
       setErr(msg);
@@ -69,6 +72,31 @@ function UserModal({ initial, onClose, onSaved }) {
       setBusy(false);
     }
   };
+
+  // New accounts finish with a summary screen (rather than closing
+  // instantly) so a failed activation email isn't silently swallowed — the
+  // admin needs to know so they can resend it or hand the link over.
+  if (created) {
+    const emailSent = created.activation_email_sent === true;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="w-full max-w-md bg-bg border border-line rounded-card shadow-xl p-5 space-y-4">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${emailSent ? 'bg-ok/15' : 'bg-warn/15'}`}>
+            <Icon name={emailSent ? 'check' : 'alert'} size={18} className={emailSent ? 'text-ok' : 'text-warn'} />
+          </div>
+          <h2 className="text-[15px] font-semibold">Account created</h2>
+          <p className="text-[13px] text-ink2 leading-relaxed">
+            {emailSent
+              ? `An activation email was sent to ${created.email}. They will set their own password from that link.`
+              : `The account was created, but the activation email to ${created.email} failed to send. Use "Resend activation email" from the user list once ready, or hand them the activation link manually.`}
+          </p>
+          <div className="flex items-center justify-end pt-1">
+            <button className="btn btn-primary" onClick={onSaved}>Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -107,15 +135,13 @@ function UserModal({ initial, onClose, onSaved }) {
             />
           </Field>
           {!isEdit && (
-            <Field label="Password">
-              <TextInput
-                icon="lock"
-                type="password"
-                value={form.password}
-                onChange={(e) => set('password', e.target.value)}
-                placeholder="Min. 8 characters"
-              />
-            </Field>
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-btn text-[12.5px] bg-info/12 text-info">
+              <Icon name="mail" size={13} className="mt-0.5 shrink-0" />
+              <span>
+                No password needed here — an activation email will be sent to the user's address so they can set
+                their own password.
+              </span>
+            </div>
           )}
           <Field label="Job Title">
             <SelectInput
@@ -132,6 +158,7 @@ function UserModal({ initial, onClose, onSaved }) {
               <option value="admin">admin</option>
               <option value="operator">operator</option>
               <option value="viewer">viewer</option>
+              <option value="driver">driver</option>
             </SelectInput>
           </Field>
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -153,14 +180,20 @@ function UserModal({ initial, onClose, onSaved }) {
   );
 }
 
-function ConfirmDialog({ message, confirmLabel = 'Confirm', onConfirm, onClose }) {
+function ConfirmDialog({ message, confirmLabel = 'Confirm', onConfirm, onClose, busy, error }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="w-full max-w-sm bg-bg border border-line rounded-card shadow-xl p-5">
         <p className="text-[14px] text-ink">{message}</p>
+        {error && (
+          <div className="flex items-start gap-2 px-3 py-2.5 mt-3 rounded-btn text-[13px] bg-bad/15 text-bad">
+            <Icon name="alert" size={13} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
         <div className="flex items-center justify-end gap-2 mt-4">
-          <button onClick={onClose} className="btn btn-ghost">Cancel</button>
-          <button onClick={onConfirm} className="btn btn-primary">{confirmLabel}</button>
+          <button onClick={onClose} disabled={busy} className="btn btn-ghost">Cancel</button>
+          <button onClick={onConfirm} disabled={busy} className="btn btn-primary">{busy ? '…' : confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -173,7 +206,11 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
   const [actionBusy, setActionBusy] = useState(null);
+  const [resendBusy, setResendBusy] = useState(null);
+  const [resendMsg, setResendMsg] = useState({});
 
   const load = useCallback(async () => {
     try {
@@ -215,6 +252,27 @@ export default function UserManagement() {
     });
   };
 
+  const handleDelete = (u) => {
+    setConfirmError('');
+    setConfirm({
+      message: `Permanently delete ${u.username}? This cannot be undone — the account and its login access will be gone for good.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        setConfirmBusy(true);
+        setConfirmError('');
+        try {
+          await deleteUser(u.user_id);
+          setConfirm(null);
+          await load();
+        } catch (e2) {
+          setConfirmError(e2?.response?.data?.error || 'Something went wrong.');
+        } finally {
+          setConfirmBusy(false);
+        }
+      },
+    });
+  };
+
   const handleReactivate = async (u) => {
     setActionBusy(u.user_id);
     try {
@@ -223,6 +281,20 @@ export default function UserManagement() {
     } catch (e) {
     } finally {
       setActionBusy(null);
+    }
+  };
+
+  const handleResendActivation = async (u) => {
+    setResendBusy(u.user_id);
+    setResendMsg((m) => ({ ...m, [u.user_id]: null }));
+    try {
+      const { data } = await resendActivation(u.user_id);
+      setResendMsg((m) => ({ ...m, [u.user_id]: data.activation_email_sent ? 'sent' : 'failed' }));
+    } catch (e) {
+      setResendMsg((m) => ({ ...m, [u.user_id]: 'failed' }));
+    } finally {
+      setResendBusy(null);
+      setTimeout(() => setResendMsg((m) => ({ ...m, [u.user_id]: null })), 4000);
     }
   };
 
@@ -283,11 +355,16 @@ export default function UserManagement() {
                   <Pill tone={roleTone(u.role)}>{ROLE_LABELS[u.role] || u.role}</Pill>
                 </td>
                 <td className="px-5 py-3">
-                  <Pill tone={u.active ? 'ok' : 'neutral'}>{u.active ? 'Active' : 'Inactive'}</Pill>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Pill tone={u.active ? 'ok' : 'neutral'}>{u.active ? 'Active' : 'Inactive'}</Pill>
+                    {u.activation_status === 'pending' && (
+                      <Pill tone="warn">Pending activation</Pill>
+                    )}
+                  </div>
                 </td>
                 <td className="px-5 py-3 text-ink3 mono tnum">{fmtDate(u.created_at)}</td>
                 <td className="px-5 py-3">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <button
                       className="btn btn-ghost h-7 text-[12px] px-2.5"
                       onClick={() => setModal({ type: 'edit', user: u })}
@@ -295,6 +372,22 @@ export default function UserManagement() {
                       <Icon name="settings" size={12} />
                       Edit
                     </button>
+                    {u.activation_status === 'pending' && (
+                      <button
+                        className="btn btn-ghost h-7 text-[12px] px-2.5"
+                        disabled={resendBusy === u.user_id}
+                        onClick={() => handleResendActivation(u)}
+                      >
+                        <Icon name="mail" size={12} />
+                        {resendBusy === u.user_id
+                          ? '…'
+                          : resendMsg[u.user_id] === 'sent'
+                          ? 'Sent!'
+                          : resendMsg[u.user_id] === 'failed'
+                          ? 'Failed'
+                          : 'Resend activation email'}
+                      </button>
+                    )}
                     {u.active ? (
                       <button
                         className="btn btn-ghost h-7 text-[12px] px-2.5 text-bad hover:text-bad"
@@ -312,6 +405,12 @@ export default function UserManagement() {
                         {actionBusy === u.user_id ? '…' : 'Reactivate'}
                       </button>
                     )}
+                    <button
+                      className="btn btn-ghost h-7 text-[12px] px-2.5 text-bad hover:text-bad"
+                      onClick={() => handleDelete(u)}
+                    >
+                      Delete
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -340,15 +439,18 @@ export default function UserManagement() {
                   <div className="text-[12px] text-ink3 truncate">{u.email || '—'}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                 <Pill tone={roleTone(u.role)}>{ROLE_LABELS[u.role] || u.role}</Pill>
                 <Pill tone={u.active ? 'ok' : 'neutral'}>{u.active ? 'Active' : 'Inactive'}</Pill>
+                {u.activation_status === 'pending' && (
+                  <Pill tone="warn">Pending activation</Pill>
+                )}
               </div>
             </div>
             <div className="text-[12px] text-ink3">
               {u.job_title || '—'} · Created {fmtDate(u.created_at)}
             </div>
-            <div className="flex items-center gap-2 pt-1">
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
               <button
                 className="btn btn-ghost h-7 text-[12px] px-2.5"
                 onClick={() => setModal({ type: 'edit', user: u })}
@@ -356,6 +458,22 @@ export default function UserManagement() {
                 <Icon name="settings" size={12} />
                 Edit
               </button>
+              {u.activation_status === 'pending' && (
+                <button
+                  className="btn btn-ghost h-7 text-[12px] px-2.5"
+                  disabled={resendBusy === u.user_id}
+                  onClick={() => handleResendActivation(u)}
+                >
+                  <Icon name="mail" size={12} />
+                  {resendBusy === u.user_id
+                    ? '…'
+                    : resendMsg[u.user_id] === 'sent'
+                    ? 'Sent!'
+                    : resendMsg[u.user_id] === 'failed'
+                    ? 'Failed'
+                    : 'Resend activation email'}
+                </button>
+              )}
               {u.active ? (
                 <button
                   className="btn btn-ghost h-7 text-[12px] px-2.5 text-bad"
@@ -373,6 +491,12 @@ export default function UserManagement() {
                   {actionBusy === u.user_id ? '…' : 'Reactivate'}
                 </button>
               )}
+              <button
+                className="btn btn-ghost h-7 text-[12px] px-2.5 text-bad"
+                onClick={() => handleDelete(u)}
+              >
+                Delete
+              </button>
             </div>
           </div>
         ))}
@@ -389,7 +513,9 @@ export default function UserManagement() {
           message={confirm.message}
           confirmLabel={confirm.confirmLabel}
           onConfirm={confirm.onConfirm}
-          onClose={() => setConfirm(null)}
+          onClose={() => { setConfirm(null); setConfirmError(''); }}
+          busy={confirmBusy}
+          error={confirmError}
         />
       )}
     </div>

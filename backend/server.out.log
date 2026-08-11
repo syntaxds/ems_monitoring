@@ -1,0 +1,25 @@
+[Server] Serving frontend build from D:\PROJECT\fleetMonitoring-dashboard\frontend\build
+[DB] Connected to ems_db@localhost
+[DB] Migration 001_init.sql applied at 2026-08-11T14:45:53.458Z
+[DB] Migration 002_device_enabled.sql applied at 2026-08-11T14:45:53.474Z
+[DB] Migration 003_roles_and_email.sql applied at 2026-08-11T14:45:53.506Z
+[DB] Migration 004_camera_paused.sql applied at 2026-08-11T14:45:53.508Z
+[DB] Migration 005_alert_dedup.sql applied at 2026-08-11T14:45:53.517Z
+[DB] Migration 006_driver_role.sql applied at 2026-08-11T14:45:53.521Z
+[DB] Migration 007_shift_end.sql applied at 2026-08-11T14:45:53.532Z
+[DB] Migration 008_driver_activation.sql applied at 2026-08-11T14:45:53.536Z
+[DB] Migration 009_user_delete_fk.sql applied at 2026-08-11T14:45:53.554Z
+[Server] EMS backend listening on port 3000 (production)
+[WS] WebSocket server initialized on path /ws
+[MQTT] Connecting to mqtts://b056696384c54d209bcc1388636b4415.s1.eu.hivemq.cloud:8883 as 'esp32_excavator' ...
+[WS] Client connected from ::ffff:127.0.0.1 (total: 1)
+[MQTT] Connected to broker
+[MQTT] Subscribed to device/+/telemetry, device/+/status and device/+/camera
+[WS] Client disconnected (total: 0)
+[WS] Client connected from ::1 (total: 1)
+[WS] Client connected from ::1 (total: 2)
+[WS] Client connected from ::1 (total: 3)
+[WS] Client disconnected (total: 2)
+[WS] Client disconnected (total: 1)
+[WS] Client disconnected (total: 0)
+[WS] Client connected from ::1 (total: 1)

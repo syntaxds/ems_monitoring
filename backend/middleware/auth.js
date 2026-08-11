@@ -60,4 +60,22 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { requireAuth, requireRole };
+/**
+ * requireRoleExcluding(...roles) — inverse of requireRole: verifies the JWT
+ * and rejects only the listed roles, allowing every other role through.
+ */
+function requireRoleExcluding(...roles) {
+  return (req, res, next) => {
+    try {
+      req.user = verifyToken(req);
+    } catch (err) {
+      return res.status(err.status || 401).json({ error: err.message });
+    }
+    if (roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    return next();
+  };
+}
+
+module.exports = { requireAuth, requireRole, requireRoleExcluding };

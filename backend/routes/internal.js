@@ -23,14 +23,24 @@ router.get('/ai/health', async (req, res) => {
  * Internal single-device analysis proxy. The frontend must never call this.
  * The AI engine expects fuel as a percentage (0-100); prefer fuel_pct when the
  * caller supplies it, falling back to fuel_level for backward compatibility.
+ *
+ * voltage and engine_status are normalised and forwarded exactly as the live
+ * MQTT ingestion path does (see handleTelemetry in services/mqttService.js), so
+ * the engine's low-voltage and engine-off fuel-drop rules can fire through this
+ * path too — without them the engine silently applied its own defaults.
  */
 router.post('/ai/analyze', async (req, res) => {
-  const { device_id, fuel_level, fuel_pct, timestamp } = req.body || {};
+  const { device_id, fuel_level, fuel_pct, timestamp, voltage, engine_status } = req.body || {};
   const fuelForAi = fuel_pct != null ? fuel_pct : fuel_level;
+  const voltageForAi = voltage != null ? Number(voltage) : null;
+  const rawEngine = engine_status ? String(engine_status).toLowerCase() : null;
+  const engineStatusForAi = rawEngine === 'running' || rawEngine === 'idle' ? rawEngine : 'off';
   const result = await aiService.analyze(
     device_id,
     fuelForAi,
-    timestamp || new Date().toISOString()
+    timestamp || new Date().toISOString(),
+    voltageForAi,
+    engineStatusForAi
   );
   res.json(result);
 });

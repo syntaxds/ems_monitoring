@@ -76,11 +76,30 @@ describe('POST /internal/ai/analyze', () => {
     aiService.analyze.mockResolvedValue({ anomaly: true, severity_code: 3 });
 
     const res = await asLoopback(request(buildApp()).post('/internal/ai/analyze'))
-      .send({ device_id: 'EX-001', fuel_level: 8, timestamp: '2026-05-30T10:00:00.000Z' });
+      .send({
+        device_id: 'EX-001',
+        fuel_level: 8,
+        timestamp: '2026-05-30T10:00:00.000Z',
+        voltage: 11.2,
+        engine_status: 'RUNNING'
+      });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ anomaly: true, severity_code: 3 });
-    expect(aiService.analyze).toHaveBeenCalledWith('EX-001', 8, '2026-05-30T10:00:00.000Z');
+    expect(aiService.analyze).toHaveBeenCalledWith(
+      'EX-001', 8, '2026-05-30T10:00:00.000Z', 11.2, 'running'
+    );
+  });
+
+  it('normalises a missing voltage/engine_status the same way MQTT ingestion does', async () => {
+    aiService.analyze.mockResolvedValue({ anomaly: false });
+
+    await asLoopback(request(buildApp()).post('/internal/ai/analyze'))
+      .send({ device_id: 'EX-003', fuel_level: 30, timestamp: '2026-05-30T10:00:00.000Z' });
+
+    expect(aiService.analyze).toHaveBeenCalledWith(
+      'EX-003', 30, '2026-05-30T10:00:00.000Z', null, 'off'
+    );
   });
 
   it('defaults the timestamp when the caller omits it', async () => {
