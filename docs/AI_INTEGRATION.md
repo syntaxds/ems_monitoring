@@ -142,6 +142,9 @@ highlighting, and fleet risk visualization.
 | fuel drop > 5 L while `engine_status == "off"` | HIGH — engine-off fuel drop |
 | burn rate > 25 L/h while running (PC135-class ceiling) | HIGH |
 | burn rate > 20 L/h while running | MEDIUM (HIGH if corroborated by the ML model) |
+| burn rate > 8 L/h while `engine_status == "idle"` (idle ceiling) | HIGH — `idle_fuel_drop` |
+| burn rate > 5 L/h while `engine_status == "idle"` | MEDIUM (HIGH if ML-corroborated) — `idle_fuel_drop` |
+| continuous `engine_status == "idle"` for > 30 minutes | MEDIUM — `idle_duration_exceeded` |
 | `timestamp` missing/malformed and single-step drop > 15 L | MEDIUM (HIGH if ML-corroborated) — degraded-mode fallback, no rate available |
 | Isolation Forest flags an unusual `(fuel, voltage)` point | LOW — informational only, does not create an alert by itself |
 | Normal fuel usage | LOW |

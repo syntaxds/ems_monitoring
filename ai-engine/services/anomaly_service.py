@@ -14,9 +14,13 @@ MAX_HISTORY                = 30
 MAX_BURN_RATE_LPH          = 25.0
 WARN_BURN_RATE_LPH         = 20.0
 MIN_RATE_WINDOW_SECONDS    = 300.0
+IDLE_MAX_BURN_RATE_LPH     = 8.0
+IDLE_WARN_BURN_RATE_LPH    = 5.0
+MAX_IDLE_DURATION_SECONDS  = 1800.0
 
 
 fuel_history = {}
+idle_since = {}
 metrics = {
     "total_predictions": 0,
     "total_anomalies": 0
@@ -108,6 +112,15 @@ def analyze_fuel(
 
     history = fuel_history[device_id]
 
+    if engine_status.lower() == "idle":
+
+        if device_id not in idle_since:
+            idle_since[device_id] = now
+
+    else:
+
+        idle_since.pop(device_id, None)
+
     metrics["total_predictions"] += 1
 
     ml_result = predict_telemetry(
@@ -168,8 +181,30 @@ def analyze_fuel(
             severity_code = 3
             anomaly_type = "engine_off_fuel_drop"
 
+    elif engine_status.lower() == "idle" and device_id in idle_since:
+
+        idle_duration = (now - idle_since[device_id]).total_seconds()
+
+        if idle_duration > MAX_IDLE_DURATION_SECONDS:
+
+            is_anomaly = True
+            reason = (
+                f"Engine idle for {idle_duration / 60:.1f} min, "
+                f"exceeds {MAX_IDLE_DURATION_SECONDS / 60:.0f} min threshold"
+            )
+            risk = "MEDIUM"
+            severity_code = 2
+            anomaly_type = "idle_duration_exceeded"
+
 
     if not is_anomaly and engine_status.lower() != "off" and len(history) >= 2:
+
+        is_idle = engine_status.lower() == "idle"
+
+        max_rate = IDLE_MAX_BURN_RATE_LPH if is_idle else MAX_BURN_RATE_LPH
+        warn_rate = IDLE_WARN_BURN_RATE_LPH if is_idle else WARN_BURN_RATE_LPH
+        drop_anomaly_type = "idle_fuel_drop" if is_idle else "fuel_drop"
+        range_label = "idle" if is_idle else "heavy-duty"
 
         baseline = history[0]
         elapsed_seconds = (now - baseline["timestamp"]).total_seconds()
@@ -179,31 +214,31 @@ def analyze_fuel(
             drop = baseline["fuel"] - fuel
             rate_lph = (drop / elapsed_seconds) * 3600.0 if drop > 0 else 0.0
 
-            if rate_lph > MAX_BURN_RATE_LPH:
+            if rate_lph > max_rate:
 
                 is_anomaly = True
-                reason = f"Fuel burn rate {rate_lph:.1f} L/h exceeds physical ceiling for this engine class"
+                reason = f"Fuel burn rate {rate_lph:.1f} L/h exceeds physical ceiling for {range_label} state"
                 risk = "HIGH"
                 severity_code = 3
-                anomaly_type = "fuel_drop"
+                anomaly_type = drop_anomaly_type
 
-            elif rate_lph > WARN_BURN_RATE_LPH:
+            elif rate_lph > warn_rate:
 
                 if prediction == -1:
 
                     is_anomaly = True
-                    reason = f"Fuel burn rate {rate_lph:.1f} L/h above heavy-duty range, confirmed by ML"
+                    reason = f"Fuel burn rate {rate_lph:.1f} L/h above {range_label} range, confirmed by ML"
                     risk = "HIGH"
                     severity_code = 3
-                    anomaly_type = "fuel_drop"
+                    anomaly_type = drop_anomaly_type
 
                 else:
 
                     is_anomaly = True
-                    reason = f"Fuel burn rate {rate_lph:.1f} L/h above heavy-duty range"
+                    reason = f"Fuel burn rate {rate_lph:.1f} L/h above {range_label} range"
                     risk = "MEDIUM"
                     severity_code = 2
-                    anomaly_type = "fuel_drop"
+                    anomaly_type = drop_anomaly_type
 
         else:
 

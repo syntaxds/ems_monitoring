@@ -100,3 +100,74 @@ def test_idle_engine_status_accepted_without_error(monkeypatch):
     result = svc.analyze_fuel("D7", 200.0, engine_status="idle", timestamp=iso(BASE))
 
     assert result["device_id"] == "D7"
+
+
+def test_idle_burn_rate_above_ceiling_is_high(monkeypatch):
+    monkeypatch.setattr(svc, "predict_telemetry", stub_ml())
+
+    svc.analyze_fuel("D8", 200.0, engine_status="idle", timestamp=iso(BASE))
+    # 2 L drop over 10 min = 12 L/h, above the idle 8 L/h ceiling
+    result = svc.analyze_fuel(
+        "D8", 198.0, engine_status="idle", timestamp=iso(BASE + timedelta(minutes=10))
+    )
+
+    assert result["anomaly"] is True
+    assert result["risk_level"] == "HIGH"
+    assert result["anomaly_type"] == "idle_fuel_drop"
+
+
+def test_idle_burn_rate_in_warn_range_is_medium(monkeypatch):
+    monkeypatch.setattr(svc, "predict_telemetry", stub_ml())
+
+    svc.analyze_fuel("D9", 200.0, engine_status="idle", timestamp=iso(BASE))
+    # 1.1 L drop over 10 min = 6.6 L/h, between idle warn (5) and ceiling (8)
+    result = svc.analyze_fuel(
+        "D9", 198.9, engine_status="idle", timestamp=iso(BASE + timedelta(minutes=10))
+    )
+
+    assert result["anomaly"] is True
+    assert result["risk_level"] == "MEDIUM"
+    assert result["anomaly_type"] == "idle_fuel_drop"
+
+
+def test_idle_burn_rate_below_running_ceiling_but_still_flagged(monkeypatch):
+    monkeypatch.setattr(svc, "predict_telemetry", stub_ml())
+
+    svc.analyze_fuel("D10", 200.0, engine_status="idle", timestamp=iso(BASE))
+    # 1.7 L drop over 10 min = 10.2 L/h: normal for "running" (< 20 L/h warn)
+    # but above idle ceiling (8 L/h), proving idle uses a stricter threshold
+    result = svc.analyze_fuel(
+        "D10", 198.3, engine_status="idle", timestamp=iso(BASE + timedelta(minutes=10))
+    )
+
+    assert result["anomaly"] is True
+    assert result["anomaly_type"] == "idle_fuel_drop"
+
+
+def test_idle_duration_exceeded_is_anomaly(monkeypatch):
+    monkeypatch.setattr(svc, "predict_telemetry", stub_ml())
+
+    svc.analyze_fuel("D11", 200.0, engine_status="idle", timestamp=iso(BASE))
+    # same device stays idle past the 30 min threshold, fuel barely moves
+    result = svc.analyze_fuel(
+        "D11", 199.8, engine_status="idle", timestamp=iso(BASE + timedelta(minutes=31))
+    )
+
+    assert result["anomaly"] is True
+    assert result["risk_level"] == "MEDIUM"
+    assert result["anomaly_type"] == "idle_duration_exceeded"
+
+
+def test_idle_duration_resets_after_leaving_idle(monkeypatch):
+    monkeypatch.setattr(svc, "predict_telemetry", stub_ml())
+
+    svc.analyze_fuel("D12", 200.0, engine_status="idle", timestamp=iso(BASE))
+    svc.analyze_fuel(
+        "D12", 199.9, engine_status="running", timestamp=iso(BASE + timedelta(minutes=20))
+    )
+
+    result = svc.analyze_fuel(
+        "D12", 199.8, engine_status="idle", timestamp=iso(BASE + timedelta(minutes=40))
+    )
+
+    assert result["anomaly_type"] != "idle_duration_exceeded"
