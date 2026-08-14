@@ -87,9 +87,30 @@ export const createUser = (data) => api.post('/api/users', data);
 export const updateUser = (id, data) => api.put(`/api/users/${id}`, data);
 export const deactivateUser = (id) => api.put(`/api/users/${id}/deactivate`);
 export const reactivateUser = (id) => api.put(`/api/users/${id}/reactivate`);
+export const deleteUser = (id) => api.delete(`/api/users/${id}`);
+export const resendActivation = (id) => api.post(`/api/users/${id}/resend-activation`);
 
 export const forgotPassword = (email) => api.post('/api/auth/forgot-password', { email });
 export const resetPassword = (token, newPassword) =>
   api.post('/api/auth/reset-password', { token, newPassword });
+
+export const validateActivationToken = (token) =>
+  api.get(`/api/auth/activate-account/${encodeURIComponent(token)}`);
+export const activateAccount = (token, newPassword) =>
+  api.post('/api/auth/activate-account', { token, newPassword });
+
+export const getAvailableShiftUnits = () => api.get('/api/driver-shift-logs/available-units');
+export const getMyActiveShift = () => api.get('/api/driver-shift-logs/active');
+export const getDriverShiftLogs = () => api.get('/api/driver-shift-logs');
+export const submitShiftLog = (formData) =>
+  api.post('/api/driver-shift-logs', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+export const endShiftLog = (formData) =>
+  api.post('/api/driver-shift-logs/end', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+export const exportDriverShiftLogs = (body) =>
+  api.post('/api/driver-shift-logs/export', body, { responseType: 'blob' });
 
 export default api;

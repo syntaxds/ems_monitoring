@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { getDevices } from '../services/api';
 import socketService from '../services/socket';
 import MapView from '../components/MapView';
@@ -18,6 +20,7 @@ import { fuelTok, engineTok, fmtRelative } from '../lib/format';
 const TANK_CAPACITY_L = 249.75;
 
 export default function Overview() {
+  const { user } = useAuth();
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -98,6 +101,10 @@ export default function Overview() {
     }
     return true;
   });
+
+  if (user?.role === 'driver') {
+    return <Navigate to="/shift-start" replace />;
+  }
 
   return (
     <div className="space-y-5">

@@ -2,7 +2,7 @@
 
 const express = require('express');
 const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireRole, requireRoleExcluding } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -10,7 +10,7 @@ const router = express.Router();
  * GET /api/alerts?status=&device_id=
  * Defaults to active alerts. Ordered by severity (high first), then newest.
  */
-router.get('/', requireAuth, async (req, res, next) => {
+router.get('/', requireRoleExcluding('driver'), async (req, res, next) => {
   try {
     const status = req.query.status || 'active';
     const deviceId = req.query.device_id || null;

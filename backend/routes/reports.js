@@ -2,7 +2,7 @@
 
 const express = require('express');
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireRoleExcluding } = require('../middleware/auth');
 const { generateCSV, generatePDF } = require('../services/reportService');
 
 const router = express.Router();
@@ -13,7 +13,7 @@ const router = express.Router();
  * Streams a CSV or PDF report. If device_id is omitted/empty, the report
  * covers the whole fleet. The file is streamed, never written to disk.
  */
-router.post('/generate', requireAuth, async (req, res, next) => {
+router.post('/generate', requireRoleExcluding('driver'), async (req, res, next) => {
   try {
     const { device_id, start_date, end_date, format } = req.body || {};
 

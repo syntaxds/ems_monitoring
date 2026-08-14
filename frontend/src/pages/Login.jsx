@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Navigate, useNavigate, Link } from 'react-router-dom';
+import { Navigate, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Icon from '../components/ui/Icon';
 import { Field, TextInput, BrandMark } from '../components/ui';
@@ -9,12 +9,14 @@ import logoImg from '../assets/logo.png';
 export default function Login() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [remember, setRemember] = useState(true);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(location.state?.message || '');
 
   // Already logged in — go straight to the dashboard.
   if (isAuthenticated) {
@@ -24,6 +26,7 @@ export default function Login() {
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
+    setNotice('');
     if (!username || !password) {
       setErr('Enter your credentials to continue.');
       return;
@@ -80,6 +83,13 @@ export default function Login() {
 
           <h1 className="text-[26px] font-semibold tracking-tight leading-tight">Sign in</h1>
           <p className="text-[13.5px] text-ink2 mt-1.5">Continue to the live fleet console.</p>
+
+          {notice && !err && (
+            <div className="mt-5 flex items-start gap-2 px-3 py-2.5 rounded-btn text-[13px] bg-ok/15 text-ok">
+              <Icon name="check" size={14} className="mt-0.5 shrink-0" />
+              <span>{notice}</span>
+            </div>
+          )}
 
           {err && (
             <div className="mt-5 flex items-start gap-2 px-3 py-2.5 rounded-btn text-[13px] bg-bad/15 text-bad">

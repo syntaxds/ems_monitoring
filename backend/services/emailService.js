@@ -37,4 +37,29 @@ async function sendPasswordResetEmail(toEmail, resetToken) {
   }
 }
 
-module.exports = { sendPasswordResetEmail };
+async function sendAccountActivationEmail(toEmail, activationToken, username) {
+  const activateUrl = `${process.env.FRONTEND_URL}/activate-account?token=${activationToken}`;
+
+  try {
+    await transporter.sendMail({
+      from: `"${process.env.SMTP_FROM_NAME}" <${process.env.SMTP_USER}>`,
+      to: toEmail,
+      subject: 'Activate your PMJ Fleet account',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+          <h2 style="color: #d32f2f;">PMJ Fleet Management</h2>
+          <p>Hi ${username || 'there'}, an administrator has set up a PMJ Fleet account for you. Click the button below to set your password and activate it.</p>
+          <p>This link expires in 7 days.</p>
+          <a href="${activateUrl}" style="display: inline-block; background: #1a1a1a; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 16px 0;">Activate Account</a>
+          <p style="color: #888; font-size: 13px;">If you weren't expecting this, you can safely ignore this email.</p>
+        </div>
+      `
+    });
+    return true;
+  } catch (err) {
+    console.error(`[Email] Failed to send activation email to ${toEmail}: ${err.message}`);
+    return false;
+  }
+}
+
+module.exports = { sendPasswordResetEmail, sendAccountActivationEmail };

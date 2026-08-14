@@ -35,7 +35,7 @@ router.post('/login', loginRateLimiter, async (req, res, next) => {
     }
 
     const result = await db.query(
-      'SELECT user_id, username, password, role, active FROM users WHERE username = $1',
+      'SELECT user_id, username, password, role, active, activation_status FROM users WHERE username = $1',
       [username]
     );
 
@@ -49,6 +49,11 @@ router.post('/login', loginRateLimiter, async (req, res, next) => {
 
     if (user.active === false) {
       await audit(user.user_id, 'LOGIN_FAILED', `Login attempt by disabled account "${username}"`);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (user.activation_status === 'pending') {
+      await audit(user.user_id, 'LOGIN_FAILED', `Login attempt by pending (not yet activated) account "${username}"`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -155,6 +160,88 @@ router.post('/reset-password', async (req, res) => {
     return res.json({ message: 'Password updated successfully' });
   } catch (err) {
     console.error(`[Auth] reset-password error: ${err.message}`);
+    return res.status(500).json({ error: 'Something went wrong, please try again' });
+  }
+});
+
+/**
+ * GET /api/auth/activate-account/:token
+ * Validates a driver account-activation token without requiring auth (the
+ * token itself is the auth) and returns just enough info for the frontend
+ * to greet the driver. Same generic error style as reset-password.
+ */
+router.get('/activate-account/:token', async (req, res) => {
+  const { token } = req.params;
+
+  try {
+    const result = await db.query(
+      `SELECT t.expires_at, t.used, u.username
+       FROM account_activation_tokens t
+       JOIN users u ON u.user_id = t.user_id
+       WHERE t.token = $1`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid or expired activation link' });
+    }
+
+    const row = result.rows[0];
+    if (row.used || new Date(row.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Invalid or expired activation link' });
+    }
+
+    return res.json({ username: row.username });
+  } catch (err) {
+    console.error(`[Auth] activate-account validate error: ${err.message}`);
+    return res.status(500).json({ error: 'Something went wrong, please try again' });
+  }
+});
+
+/**
+ * POST /api/auth/activate-account
+ * Validates the token and sets the driver's own password, flipping the
+ * account from 'pending' to 'active'.
+ */
+router.post('/activate-account', async (req, res) => {
+  const { token, newPassword } = req.body || {};
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: 'Token and new password are required' });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+
+  try {
+    const result = await db.query(
+      'SELECT user_id, expires_at, used FROM account_activation_tokens WHERE token = $1',
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid or expired activation link' });
+    }
+
+    const row = result.rows[0];
+    if (row.used || new Date(row.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Invalid or expired activation link' });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+
+    await db.query(
+      "UPDATE users SET password = $1, activation_status = 'active' WHERE user_id = $2",
+      [hashed, row.user_id]
+    );
+    await db.query('UPDATE account_activation_tokens SET used = true WHERE token = $1', [token]);
+    await db.query(
+      'INSERT INTO audit_log (user_id, action, description) VALUES ($1, $2, $3)',
+      [row.user_id, 'ACCOUNT_ACTIVATED', 'Driver activated their own account']
+    );
+
+    return res.json({ message: 'Account activated successfully' });
+  } catch (err) {
+    console.error(`[Auth] activate-account error: ${err.message}`);
     return res.status(500).json({ error: 'Something went wrong, please try again' });
   }
 });

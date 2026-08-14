@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { getDevices, getDeviceFuel } from '../services/api';
 import socketService from '../services/socket';
 import Icon from '../components/ui/Icon';
@@ -51,6 +53,7 @@ function detectEvents(points) {
 }
 
 export default function FuelAnalytics() {
+  const { user } = useAuth();
   const [devices, setDevices] = useState([]);
   const [selected, setSelected] = useState('');
   const [range, setRange] = useState('24h');
@@ -121,16 +124,20 @@ export default function FuelAnalytics() {
     // first→last gives 0 whenever fuel has a net rise (EMA settling, refuel),
     // even if real consumption happened in between.
     let consumed = 0;
+    let consumedWhileRunning = 0;
     let runningMs = 0;
     let refuels = 0;
     for (let i = 1; i < points.length; i++) {
       const delta = points[i].v - points[i - 1].v;
-      if (points[i - 1].engine === 'running') runningMs += points[i].t - points[i - 1].t;
-      if (delta < 0) consumed += -delta;
-      else if (delta > 30) refuels++;
+      const isRunning = points[i - 1].engine === 'running';
+      if (isRunning) runningMs += points[i].t - points[i - 1].t;
+      if (delta < 0) {
+        consumed += -delta;
+        if (isRunning) consumedWhileRunning += -delta;
+      } else if (delta > 30) refuels++;
     }
     const runningHours = runningMs / 3600000;
-    const burnRate = runningHours > 0 ? consumed / runningHours : 0;
+    const burnRate = runningHours > 0 ? consumedWhileRunning / runningHours : 0;
     return {
       current,
       burned: Number(consumed.toFixed(1)),
@@ -143,6 +150,10 @@ export default function FuelAnalytics() {
   const maxHourly = useMemo(() => Math.max(1, ...hourly.map((h) => h.value)), [hourly]);
   const events = useMemo(() => detectEvents(points), [points]);
   const selectedDevice = devices.find((d) => d.device_id === selected);
+
+  if (user?.role === 'driver') {
+    return <Navigate to="/shift-start" replace />;
+  }
 
   return (
     <div className="space-y-5">
